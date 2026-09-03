@@ -1,0 +1,211 @@
+# Kit sockseek — playlists SoundCloud vers Soulseek
+
+Récupère une playlist SoundCloud ou YouTube, nettoie les métadonnées, télécharge
+ce qui existe sur Soulseek, et produit une playlist M3U des fichiers réellement
+obtenus avec un rapport détaillé de ce qui a échoué et pourquoi.
+
+## Contenu
+
+| Fichier | Rôle |
+|---|---|
+| `Install-Sockseek.ps1` | Télécharge les binaires, crée la configuration, règle le PATH |
+| `Get-SoulseekList.ps1` | Extraction, nettoyage, téléchargement, rapport |
+| `Build-Playlist.ps1` | Rapport et playlist seuls, réutilisable après un run manuel |
+
+## Prérequis
+
+PowerShell 7 ou plus. Windows PowerShell 5.1 ne suffit pas : le kit utilise
+l'encodage `utf8NoBOM` et `[IO.Path]::GetRelativePath`, absents de la 5.1.
+
+```powershell
+winget install --id Microsoft.PowerShell --source winget
+```
+
+Ensuite, ouvre **pwsh** (pas `powershell.exe`, ni ISE — ISE est resté bloqué
+sur 5.1 et ne sera jamais porté).
+
+## Installation
+
+```powershell
+cd <dossier-du-kit>
+pwsh -File .\Install-Sockseek.ps1
+```
+
+L'installateur enchaîne :
+
+1. Passe la politique d'exécution à `Unrestricted` pour l'utilisateur courant.
+2. Résout la dernière release de `fiso64/sockseek`, télécharge l'archive
+   `win-x64`, extrait le binaire vers `%LOCALAPPDATA%\sockseek`.
+3. Fait de même pour `yt-dlp.exe`.
+4. Ajoute le dossier au PATH utilisateur (pas machine : aucune élévation requise).
+5. Demande tes identifiants Soulseek et écrit `%APPDATA%\sockseek\sockseek.conf`.
+
+Options utiles :
+
+```powershell
+.\Install-Sockseek.ps1 -InstallDir "D:\Outils\sockseek" -MusicDir "D:\Music\techno"
+.\Install-Sockseek.ps1 -Force                  # réinstalle et régénère la config
+.\Install-Sockseek.ps1 -SkipExecutionPolicy    # ne touche pas à la politique
+```
+
+Rouvre un terminal après l'installation : le PATH n'est relu qu'au démarrage
+d'un processus.
+
+### À propos du compte Soulseek
+
+Il n'y a pas d'inscription préalable. Le serveur Soulseek enregistre un pseudo
+à la première connexion : le compte est donc créé automatiquement quand
+sockseek se connecte. Deux conséquences pratiques.
+
+Si le pseudo que tu choisis est déjà pris par quelqu'un d'autre, la connexion
+sera refusée — prends-en un peu commun. Et si tu fais tourner Nicotine+ ou
+slskd en parallèle, utilise un **second compte** pour sockseek : deux sessions
+simultanées sur le même pseudo provoquent des problèmes de connexion.
+
+Vérifie que ça passe avant d'aller plus loin :
+
+```powershell
+sockseek "Sciahri - Let Them Go" --song --print results
+```
+
+### À propos de la politique d'exécution
+
+`Unrestricted` exécute n'importe quel script sans avertissement, y compris ceux
+téléchargés depuis Internet. `RemoteSigned` suffirait pour ce kit et reste plus
+prudent — il n'exige une signature que pour les fichiers marqués comme venant
+du web :
+
+```powershell
+Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
+```
+
+L'installateur applique `Unrestricted` par défaut ; `-SkipExecutionPolicy` le
+laisse tranquille.
+
+## Utilisation
+
+Extraction et nettoyage seuls, pour inspecter le CSV avant d'engager quoi que
+ce soit :
+
+```powershell
+.\Get-SoulseekList.ps1 -Url "https://soundcloud.com/loleanto/sets/sans-retour-short"
+```
+
+Voir ce que Soulseek renverrait, sans rien télécharger :
+
+```powershell
+.\Get-SoulseekList.ps1 -Url $url -Download -PrintOnly
+```
+
+Pour de vrai :
+
+```powershell
+.\Get-SoulseekList.ps1 -Url $url -Download -OutputDir "D:\Music\techno"
+```
+
+### Paramètres
+
+| Paramètre | Effet |
+|---|---|
+| `-Url` | Playlist SoundCloud ou YouTube (obligatoire) |
+| `-Out` | CSV nettoyé (défaut `playlist-clean.csv`) |
+| `-RawOut` | Écrit aussi le CSV brut, pour comparer |
+| `-Download` | Enchaîne sur sockseek |
+| `-PrintOnly` | Avec `-Download` : recherche seule |
+| `-OutputDir` | Dossier de téléchargement |
+| `-SockseekPath` | Chemin du binaire si absent du PATH |
+| `-Credential` | Identifiants explicites, en dépannage |
+
+## Ce qui est nettoyé
+
+Les exports SoundCloud sont sales, et c'est là que se joue le taux de réussite.
+Le champ `uploader` est le nom de la chaîne ou du label, pas l'artiste : sur un
+set typique, une trentaine de titres ont leur véritable artiste caché dans le
+titre. « BCCO Premiere: Mislaw - Fourth Siren [THEIA001] » doit devenir artiste
+`Mislaw`, titre `Fourth Siren`, sans quoi la recherche part sur « BCCO ».
+
+Sont retirés : préfixes de premiere sous toutes leurs formes, codes catalogue
+entre crochets, mentions de téléchargement libre, `(Original Mix)`, positions
+vinyle en tête (`A2 Deluka`), suffixes `, by Artiste`. Les polices fantaisie
+Unicode sont normalisées.
+
+Sont **conservés** : les noms de remix `(Kr!z Remix)`, discriminants pour la
+recherche, et les durées, qui servent de filtre.
+
+La colonne `Review` du CSV signale les cas douteux : `TRONQUE` pour les titres
+coupés à l'export, `artiste=chaine` quand aucun artiste n'a pu être extrait.
+
+## Suivi des échecs
+
+À la fin d'un run, `Build-Playlist.ps1` confronte l'index sockseek au disque.
+La vérité vient du disque : un fichier absent est un échec même si l'index le
+dit téléchargé. L'index ne sert qu'à retrouver la cause.
+
+Chaque échec est classé :
+
+| Catégorie | Signification | Piste |
+|---|---|---|
+| Introuvable sur Soulseek | Aucun résultat | Le morceau n'y est pas ; `--yt-dlp` en repli |
+| Filtre par les conditions | Des résultats, mais aucun conforme | Assouplir `--length-tol`, `--format` |
+| Problème réseau ou pair injoignable | Le pair a lâché | Relancer, ça repart souvent |
+| Fichier absent du disque | Index optimiste | Fichier déplacé ou supprimé après coup |
+| Jamais traité | Absent de l'index | Run interrompu |
+
+Deux fichiers sont produits dans le dossier de sortie : `rapport.csv` avec le
+détail par titre, et `sockseek-<horodatage>.log` pour le journal brut.
+
+Relancer l'analyse seule après un run manuel :
+
+```powershell
+.\Build-Playlist.ps1 -OutputDir "D:\Music\techno" -SourceCsv playlist-clean.csv
+```
+
+Code de sortie 0 si tout est passé, 10 s'il reste des échecs — exploitable en
+tâche planifiée.
+
+## Playlist M3U
+
+`playlist.m3u` est écrite dans le dossier de sortie, au format M3U étendu
+(`#EXTINF` avec durée et libellé), avec des **chemins relatifs** : le dossier
+reste transportable vers une clé USB ou un autre disque sans casser la
+playlist. Seuls les fichiers réellement présents y figurent.
+
+Le fichier est en UTF-8 sans BOM. C'est formellement du M3U8, mais VLC,
+foobar2000 et Rekordbox le lisent sans difficulté sous l'extension `.m3u`.
+
+## Attentes réalistes
+
+Sur un set fait de premières de labels confidentiels et de free DL Bandcamp,
+le taux de réussite sera bas — ce répertoire ne circule pas beaucoup sur
+Soulseek. Fais toujours un `-PrintOnly` d'abord.
+
+Côté durée : le serveur bannit 30 minutes si les recherches s'enchaînent trop
+vite, et le limiteur intégré autorise 34 recherches par 220 secondes. Pour 80
+titres, compte une dizaine de minutes au minimum. Ne touche pas à
+`--searches-per-time`.
+
+## Dépannage
+
+**`yt-dlp est introuvable dans le PATH`** — rouvre le terminal après
+l'installation, ou passe par `-SockseekPath` pour sockseek.
+
+**`Aucun fichier sockseek.conf trouve`** — relance l'installateur, ou crée le
+fichier à la main dans `%APPDATA%\sockseek\`.
+
+**La connexion Soulseek échoue** — pseudo déjà pris, ou déjà utilisé par un
+autre client ouvert en parallèle.
+
+**`L'API GitHub refuse la requete (code 403)`** — quota GitHub atteint : 60
+requêtes par heure et par IP sans authentification, partagé avec tout le
+réseau derrière un NAT d'entreprise. Attends une heure, ou récupère les URL à
+la main sur les pages de releases et passe-les à l'installateur :
+
+```powershell
+.\Install-Sockseek.ps1 `
+   -SockseekUrl "https://github.com/.../sockseek_3.0.5_win-x64.zip" `
+   -YtDlpUrl    "https://github.com/.../yt-dlp.exe"
+```
+
+**Beaucoup de « Filtre par les conditions »** — tes conditions sont trop
+strictes pour ce répertoire. Retire `pref-format = flac` de la configuration,
+ou augmente `length-tol`.
