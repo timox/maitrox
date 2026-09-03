@@ -9,8 +9,7 @@ obtenus avec un rapport détaillé de ce qui a échoué et pourquoi.
 | Fichier | Rôle |
 |---|---|
 | `installer.bat` | **Double-clic : installe tout** |
-| `lancer.bat` | **Double-clic : demande une URL et lance le traitement** |
-| `reprendre.bat` | **Double-clic : réessaie tout ce qui manque** |
+| `lancer.bat` | **Double-clic : nouvelle playlist, reprise, ou état** |
 | `Install-Sockseek.ps1` | Télécharge les binaires, crée la configuration, règle le PATH |
 | `Get-SoulseekList.ps1` | Extraction, nettoyage, téléchargement, rapport |
 | `Build-Playlist.ps1` | Rapport et playlist seuls, réutilisable après un run manuel |
@@ -18,8 +17,11 @@ obtenus avec un rapport détaillé de ce qui a échoué et pourquoi.
 | `SockseekLib.ps1` | Fonctions partagées, pas destiné à être lancé seul |
 
 Si tu n'as pas envie de toucher à une ligne de commande, les deux `.bat`
-suffisent : double-clic sur `installer.bat`, puis sur `lancer.bat`. Le reste de
-ce document décrit ce qu'ils font et comment piloter les scripts directement.
+suffisent : double-clic sur `installer.bat` une fois, puis sur `lancer.bat`
+pour tout le reste. Son menu propose de traiter une nouvelle playlist, de
+reprendre les titres manquants, ou de consulter l'état des playlists déjà
+traitées. Le reste de ce document décrit ce qu'ils font et comment piloter les
+scripts directement.
 
 ## Prérequis
 
@@ -95,8 +97,8 @@ laisse tranquille.
 
 ## Utilisation
 
-Double-clique sur **`lancer.bat`**. Il demande l'URL de la playlist, puis
-propose trois modes : tester sans rien télécharger (le défaut), télécharger
+Double-clique sur **`lancer.bat`** et choisis « Traiter une nouvelle
+playlist ». Il demande l'URL, puis propose trois modes : tester sans rien télécharger (le défaut), télécharger
 pour de vrai, ou seulement extraire et nettoyer la liste. Il accepte aussi une
 URL en argument, ce qui permet d'en faire un raccourci.
 
@@ -196,7 +198,8 @@ recherches s'enchaînent trop vite : un flux unique et régulier vaut mieux que
 plusieurs relances concurrentes. Un titre manquant dans deux playlists n'est
 cherché qu'une fois.
 
-Double-clique sur **`reprendre.bat`**, ou :
+Double-clique sur **`lancer.bat`** et choisis « Reprendre les titres
+manquants », ou en ligne de commande :
 
 ```powershell
 .\Resume-Downloads.ps1 -List      # état des playlists, sans rien relancer

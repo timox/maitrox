@@ -4,32 +4,52 @@ setlocal
 
 cd /d "%~dp0"
 
-echo ================================================================
-echo  Recuperation d'une playlist vers Soulseek
-echo ================================================================
-echo.
-
 call :FindPwsh
 if errorlevel 1 goto NoPwsh
 
-REM L'URL peut arriver en argument, sinon on la demande.
+REM Une URL passee en argument saute directement au traitement.
 set "URL=%~1"
-if not "%URL%"=="" goto HaveUrl
+if not "%URL%"=="" goto AskMode
 
+:Menu
+cls
+echo ================================================================
+echo  Kit sockseek
+echo ================================================================
+echo.
+echo   [1] Traiter une nouvelle playlist
+echo   [2] Reprendre les titres manquants (toutes playlists)
+echo   [3] Voir l'etat des playlists deja traitees
+echo   [4] Quitter
+echo.
+
+set /p "MENU=Choix [1] : "
+if "%MENU%"=="" set "MENU=1"
+
+if "%MENU%"=="1" goto AskUrl
+if "%MENU%"=="2" goto Resume
+if "%MENU%"=="3" goto Etat
+if "%MENU%"=="4" exit /b 0
+
+echo.
+echo   Choix invalide.
+timeout /t 2 >nul
+goto Menu
+
+
+REM =============================================== nouvelle playlist ========
+:AskUrl
+echo.
 echo Colle l'URL de la playlist SoundCloud ou YouTube.
 echo (clic droit dans cette fenetre pour coller)
 echo.
 set /p "URL=URL : "
-
-:HaveUrl
 if "%URL%"=="" goto NoUrl
 
+:AskMode
 echo.
 echo URL : "%URL%"
 echo.
-
-REM Une recherche a blanc evite d'engager dix minutes pour rien.
-set "MODE="
 echo Que veux-tu faire ?
 echo.
 echo   [1] Tester d'abord : cherche sur Soulseek, ne telecharge rien
@@ -39,13 +59,13 @@ echo.
 set /p "CHOIX=Choix [1] : "
 if "%CHOIX%"=="" set "CHOIX=1"
 
+set "MODE="
 set "VALID="
 if "%CHOIX%"=="1" (set "MODE=-Download -PrintOnly" & set "VALID=1")
 if "%CHOIX%"=="2" (set "MODE=-Download" & set "VALID=1")
 if "%CHOIX%"=="3" (set "MODE=" & set "VALID=1")
 if not defined VALID goto BadChoice
 
-REM Dossier de destination facultatif : vide = valeur du fichier de config.
 set "DEST="
 if not "%CHOIX%"=="3" (
     echo.
@@ -65,15 +85,63 @@ set CODE=%ERRORLEVEL%
 
 echo.
 echo ----------------------------------------------------------------
-if %CODE%==0 (
+if "%CODE%"=="0" (
     echo Termine sans echec.
-) else if %CODE%==10 (
+) else if "%CODE%"=="10" (
     echo Termine, mais certains titres n'ont pas ete recuperes.
     echo Le detail est dans rapport.csv, dans le dossier de destination.
+    echo.
+    echo Sur un reseau P2P, reessayer plus tard suffit souvent : le pair
+    echo qui partage le morceau doit simplement etre connecte. Relance ce
+    echo fichier et choisis "Reprendre les titres manquants".
 ) else (
     echo Termine avec le code %CODE%. Relis les messages ci-dessus.
 )
+goto End
 
+
+REM ========================================================= reprise ========
+:Resume
+echo.
+echo ----------------------------------------------------------------
+echo  Reprise des titres manquants
+echo ----------------------------------------------------------------
+echo.
+echo Un morceau introuvable un jour peut apparaitre le lendemain : il
+echo suffit que le pair qui le partage se reconnecte. La reprise repasse
+echo sur tout ce qui manque, toutes playlists confondues, en une fois.
+echo.
+echo   [1] Voir d'abord la liste des titres qui seraient repris
+echo   [2] Reprendre maintenant
+echo.
+set /p "RMODE=Choix [1] : "
+if "%RMODE%"=="" set "RMODE=1"
+
+set "RARG="
+set "VALID="
+if "%RMODE%"=="1" (set "RARG=-DryRun" & set "VALID=1")
+if "%RMODE%"=="2" (set "RARG=" & set "VALID=1")
+if not defined VALID goto BadChoice
+
+echo.
+echo ----------------------------------------------------------------
+echo.
+
+"%PWSH%" -NoProfile -ExecutionPolicy Bypass -File "%~dp0Resume-Downloads.ps1" %RARG%
+set CODE=%ERRORLEVEL%
+goto End
+
+
+REM ============================================================ etat ========
+:Etat
+echo.
+"%PWSH%" -NoProfile -ExecutionPolicy Bypass -File "%~dp0Resume-Downloads.ps1" -List
+set CODE=%ERRORLEVEL%
+goto End
+
+
+REM =========================================================== sortie =======
+:End
 echo.
 pause
 exit /b %CODE%
@@ -89,7 +157,7 @@ exit /b 1
 
 :BadChoice
 echo.
-echo   Choix invalide : tape 1, 2 ou 3.
+echo   Choix invalide.
 echo.
 pause
 exit /b 1
@@ -118,6 +186,9 @@ exit /b 1
 :NoPwsh
 echo.
 echo   PowerShell 7 est introuvable. Lance d'abord installer.bat.
+echo.
+echo   Ce kit ne fonctionne ni avec le PowerShell 5.1 de Windows, ni
+echo   avec ISE : il utilise des fonctions qui n'existent pas en 5.1.
 echo.
 pause
 exit /b 1
