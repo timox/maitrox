@@ -8,9 +8,18 @@ obtenus avec un rapport détaillé de ce qui a échoué et pourquoi.
 
 | Fichier | Rôle |
 |---|---|
+| `installer.bat` | **Double-clic : installe tout** |
+| `lancer.bat` | **Double-clic : demande une URL et lance le traitement** |
+| `reprendre.bat` | **Double-clic : réessaie tout ce qui manque** |
 | `Install-Sockseek.ps1` | Télécharge les binaires, crée la configuration, règle le PATH |
 | `Get-SoulseekList.ps1` | Extraction, nettoyage, téléchargement, rapport |
 | `Build-Playlist.ps1` | Rapport et playlist seuls, réutilisable après un run manuel |
+| `Resume-Downloads.ps1` | Reprise groupée des titres manquants, toutes playlists |
+| `SockseekLib.ps1` | Fonctions partagées, pas destiné à être lancé seul |
+
+Si tu n'as pas envie de toucher à une ligne de commande, les deux `.bat`
+suffisent : double-clic sur `installer.bat`, puis sur `lancer.bat`. Le reste de
+ce document décrit ce qu'ils font et comment piloter les scripts directement.
 
 ## Prérequis
 
@@ -25,6 +34,8 @@ Ensuite, ouvre **pwsh** (pas `powershell.exe`, ni ISE — ISE est resté bloqué
 sur 5.1 et ne sera jamais porté).
 
 ## Installation
+
+Double-clique sur **`installer.bat`**, ou en ligne de commande :
 
 ```powershell
 cd <dossier-du-kit>
@@ -84,7 +95,12 @@ laisse tranquille.
 
 ## Utilisation
 
-Extraction et nettoyage seuls, pour inspecter le CSV avant d'engager quoi que
+Double-clique sur **`lancer.bat`**. Il demande l'URL de la playlist, puis
+propose trois modes : tester sans rien télécharger (le défaut), télécharger
+pour de vrai, ou seulement extraire et nettoyer la liste. Il accepte aussi une
+URL en argument, ce qui permet d'en faire un raccourci.
+
+En ligne de commande, extraction et nettoyage seuls, pour inspecter le CSV avant d'engager quoi que
 ce soit :
 
 ```powershell
@@ -162,6 +178,50 @@ Relancer l'analyse seule après un run manuel :
 
 Code de sortie 0 si tout est passé, 10 s'il reste des échecs — exploitable en
 tâche planifiée.
+
+## Reprise des titres manquants
+
+C'est là que se rattrape l'essentiel des échecs. Soulseek est un réseau P2P :
+un morceau introuvable aujourd'hui parce que la seule personne qui le partage
+est hors ligne sera peut-être là demain. Relancer ne coûte presque rien et
+récupère régulièrement quelques titres de plus, sans changer un seul réglage.
+
+Chaque run avec `-Download` inscrit la playlist dans un catalogue
+(`%APPDATA%\sockseek\catalogue.json`). La reprise le relit, recalcule ce qui
+manque pour chacune, fusionne le tout en une liste dédoublonnée et relance
+sockseek — une passe par dossier de destination, pas une par playlist.
+
+Ce regroupement n'est pas cosmétique. Le serveur bannit 30 minutes si les
+recherches s'enchaînent trop vite : un flux unique et régulier vaut mieux que
+plusieurs relances concurrentes. Un titre manquant dans deux playlists n'est
+cherché qu'une fois.
+
+Double-clique sur **`reprendre.bat`**, ou :
+
+```powershell
+.\Resume-Downloads.ps1 -List      # état des playlists, sans rien relancer
+.\Resume-Downloads.ps1 -DryRun    # ce qui serait repris
+.\Resume-Downloads.ps1            # reprise réelle
+```
+
+Filtrer sur une seule playlist :
+
+```powershell
+.\Resume-Downloads.ps1 -Only "sans-retour"
+```
+
+Retirer une playlist du catalogue (les fichiers déjà téléchargés ne sont pas
+touchés) :
+
+```powershell
+.\Resume-Downloads.ps1 -Only "sans-retour" -Forget
+```
+
+Après chaque reprise, les playlists M3U et les rapports concernés sont
+régénérés, et le catalogue met à jour son compte de titres récupérés.
+
+Ne t'acharne pas le même jour : si une reprise ne ramène rien, laisse passer
+quelques jours et réessaie à une heure où davantage de pairs sont connectés.
 
 ## Playlist M3U
 

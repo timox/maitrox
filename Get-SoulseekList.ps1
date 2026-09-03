@@ -424,7 +424,7 @@ if ($code -ne 0) {
 # ---------------------------------------------------- rapport et playlist ---
 $builder = Join-Path (Split-Path -Parent $PSCommandPath) 'Build-Playlist.ps1'
 if (Test-Path -LiteralPath $builder) {
-    & $builder -OutputDir $OutputDir -IndexPath $idxPath -SourceCsv $Out
+    & $builder -OutputDir $OutputDir -IndexPath $idxPath -SourceCsv $Out -Register $Url
 }
 else {
     Write-Warning "Build-Playlist.ps1 absent : ni rapport ni playlist generes."
