@@ -251,6 +251,18 @@ vite, et le limiteur intégré autorise 34 recherches par 220 secondes. Pour 80
 titres, compte une dizaine de minutes au minimum. Ne touche pas à
 `--searches-per-time`.
 
+## Tests
+
+La logique de nettoyage des titres (`Normalize-Text`, `Clean-Title`,
+`Convert-Entry`, dans `SockseekLib.ps1`) est couverte par des tests Pester
+dans `tests/SockseekLib.Tests.ps1` — pratique pour vérifier qu'une regex
+retouchée ne casse pas un cas déjà géré.
+
+```powershell
+Install-Module Pester -Scope CurrentUser -MinimumVersion 5.0   # une fois
+Invoke-Pester .\tests\SockseekLib.Tests.ps1
+```
+
 ## Dépannage
 
 **`yt-dlp est introuvable dans le PATH`** — rouvre le terminal après
