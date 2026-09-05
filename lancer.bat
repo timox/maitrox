@@ -68,8 +68,13 @@ if not defined VALID goto BadChoice
 
 set "DEST="
 if not "%CHOIX%"=="3" (
+    set "CURRENTDEST="
+    for /f "delims=" %%D in ('"%PWSH%" -NoProfile -Command ". \"%~dp0SockseekLib.ps1\"; Get-DefaultOutputDir"') do set "CURRENTDEST=%%D"
+
     echo.
-    echo Dossier de destination ^(laisse vide pour la valeur par defaut^) :
+    echo Dossier de destination actuel : "%CURRENTDEST%"
+    echo Laisse vide pour le conserver, ou tape un nouveau chemin pour le
+    echo remplacer ^(il devient le defaut pour les prochaines fois^) :
     set /p "DEST=Dossier : "
 )
 
@@ -89,7 +94,8 @@ if "%CODE%"=="0" (
     echo Termine sans echec.
 ) else if "%CODE%"=="10" (
     echo Termine, mais certains titres n'ont pas ete recuperes.
-    echo Le detail est dans rapport.csv, dans le dossier de destination.
+    echo Le detail est dans rapport.csv, dans le sous-dossier de la playlist
+    echo ^(a l'interieur du dossier de destination^).
     echo.
     echo Sur un reseau P2P, reessayer plus tard suffit souvent : le pair
     echo qui partage le morceau doit simplement etre connecte. Relance ce

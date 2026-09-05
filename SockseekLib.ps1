@@ -389,10 +389,57 @@ function Show-RunSummary {
 # n'est pas passe. Sur un reseau P2P, un pair hors ligne aujourd'hui peut etre
 # la demain : la reprise coute peu et rattrape beaucoup.
 
+function Get-SockseekConfigDir {
+    if ($env:APPDATA) { [IO.Path]::Combine($env:APPDATA, 'sockseek') }
+    else { [IO.Path]::Combine($HOME, '.config', 'sockseek') }
+}
+
 function Get-CataloguePath {
-    $dir = if ($env:APPDATA) { [IO.Path]::Combine($env:APPDATA, 'sockseek') }
-           else { [IO.Path]::Combine($HOME, '.config', 'sockseek') }
-    return [IO.Path]::Combine($dir, 'catalogue.json')
+    return [IO.Path]::Combine((Get-SockseekConfigDir), 'catalogue.json')
+}
+
+function Get-PrefsPath {
+    return [IO.Path]::Combine((Get-SockseekConfigDir), 'prefs.json')
+}
+
+function Get-DefaultOutputDir {
+    <# Dossier de destination retenu d'un lancement a l'autre. Modifie via
+       Set-DefaultOutputDir (typiquement en tapant un nouveau chemin dans le
+       menu de lancer.bat), sinon valeur d'origine du kit. #>
+    $path = Get-PrefsPath
+    if (Test-Path -LiteralPath $path) {
+        try {
+            $prefs = Get-Content -LiteralPath $path -Raw -Encoding utf8 | ConvertFrom-Json
+            if ($prefs.OutputDir) { return $prefs.OutputDir }
+        }
+        catch {
+            Write-Warning "Preferences illisibles ($path) : $($_.Exception.Message)"
+        }
+    }
+    return (Join-Path $HOME 'Music' 'sockseek')
+}
+
+function Set-DefaultOutputDir {
+    param([Parameter(Mandatory)] [string] $OutputDir)
+    $path = Get-PrefsPath
+    New-Item -ItemType Directory -Path (Split-Path -Parent $path) -Force | Out-Null
+    [pscustomobject]@{ OutputDir = $OutputDir } | ConvertTo-Json |
+        Set-Content -LiteralPath $path -Encoding utf8NoBOM
+}
+
+function ConvertTo-SafeFolderName {
+    <# Nom de playlist -> nom de dossier valide sur Windows comme sur Unix.
+       Liste figee plutot que [IO.Path]::GetInvalidFileNameChars() : cette
+       API est dependante de la plateforme (sur Linux elle n'exclut que '/'),
+       alors que le kit cible du disque Windows quelle que soit la machine
+       qui execute le script. #>
+    param([string] $Name)
+    if ([string]::IsNullOrWhiteSpace($Name)) { return 'playlist' }
+    $safe = $Name -replace '[<>:"/\\|?*\x00-\x1f]', ' '
+    $safe = $safe -replace '\s+', ' '
+    $safe = $safe.Trim(" .")
+    if ([string]::IsNullOrWhiteSpace($safe)) { return 'playlist' }
+    return $safe
 }
 
 function Read-Catalogue {
