@@ -77,6 +77,7 @@ $script:busyControls     = [System.Collections.Generic.List[object]]::new()
 function Set-BusyState {
     param([bool] $Busy)
     foreach ($c in $script:busyControls) { $c.Enabled = -not $Busy }
+    if ($lblPlaylistsBusy) { $lblPlaylistsBusy.Visible = $Busy }
 }
 
 function Start-KitJob {
@@ -714,7 +715,15 @@ $txtPlaylistSearch = [System.Windows.Forms.TextBox]::new()
 $txtPlaylistSearch.Width = 250
 $txtPlaylistSearch.Margin = [System.Windows.Forms.Padding]::new(3, 6, 3, 3)
 
-$barSearch.Controls.AddRange(@($lblSearch, $txtPlaylistSearch))
+$lblPlaylistsBusy = [System.Windows.Forms.Label]::new()
+$lblPlaylistsBusy.Text = 'Operation en cours (onglet Suivi) : la liste se mettra a jour a la fin.'
+$lblPlaylistsBusy.ForeColor = [System.Drawing.Color]::DarkOrange
+$lblPlaylistsBusy.Font = [System.Drawing.Font]::new($lblPlaylistsBusy.Font, [System.Drawing.FontStyle]::Bold)
+$lblPlaylistsBusy.AutoSize = $true
+$lblPlaylistsBusy.Margin = [System.Windows.Forms.Padding]::new(15, 9, 3, 3)
+$lblPlaylistsBusy.Visible = $false
+
+$barSearch.Controls.AddRange(@($lblSearch, $txtPlaylistSearch, $lblPlaylistsBusy))
 
 $panelPlaylistsTop = [System.Windows.Forms.Panel]::new()
 $panelPlaylistsTop.Dock = 'Fill'
