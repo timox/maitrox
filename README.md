@@ -47,10 +47,15 @@ Quatre onglets :
   et un bouton pour ouvrir le journal complet) ; boutons pour tester ou
   reprendre la playlist sélectionnée, ou tout reprendre d'un coup.
 - **Suivi d'exécution** — le journal en direct de l'opération en cours (ou de
-  la dernière terminée). Une seule opération à la fois : lancer une nouvelle
-  action pendant qu'une autre tourne est refusé, exactement pour la même
-  raison que le kit ne lance jamais deux recherches Soulseek en parallèle
-  (voir plus bas).
+  la dernière terminée), avec un bouton **Arrêter l'opération en cours**
+  (demande confirmation, puis tue tout de suite le processus et ses
+  éventuels sous-processus). Une seule opération à la fois : lancer une
+  nouvelle action pendant qu'une autre tourne est refusé, exactement pour la
+  même raison que le kit ne lance jamais deux recherches Soulseek en
+  parallèle (voir plus bas) — tant qu'aucune opération n'est en cours, ce
+  bouton reste grisé. Un arrêt en cours de route interrompt les
+  téléchargements entamés (les fichiers déjà complets restent utilisables,
+  sockseek reprendra le reste au prochain lancement).
 
 ⚠️ **Testée partiellement.** Un premier passage réel sur Windows a confirmé
 que la fenêtre s'affiche et fonctionne, et a fait remonter de vrais bugs

@@ -71,12 +71,16 @@ $defaultInstallDir = Join-Path $env:LOCALAPPDATA 'sockseek'
 # ===================================================== job en arriere-plan =
 $script:activeJob        = $null
 $script:activeOnComplete = $null
+$script:activeJobHostPid = $null
+$script:jobWasStopped    = $false
 $script:lastExitCode     = -1
 $script:busyControls     = [System.Collections.Generic.List[object]]::new()
 
 function Set-BusyState {
     param([bool] $Busy)
     foreach ($c in $script:busyControls) { $c.Enabled = -not $Busy }
+    if ($lblPlaylistsBusy) { $lblPlaylistsBusy.Visible = $Busy }
+    if ($btnStopJob) { $btnStopJob.Enabled = $Busy }
 }
 
 function Start-KitJob {
@@ -103,11 +107,13 @@ function Start-KitJob {
     $lblSuiviStatus.Text = "En cours : $Description"
     Set-BusyState $true
 
-    $script:lastExitCode = -1
+    $script:lastExitCode  = -1
+    $script:jobWasStopped = $false
     $script:activeOnComplete = {
         param($code)
-        $lblSuiviStatus.Text = if ($code -eq 0) { "Termine sans echec : $Description" }
-                               else { "Termine (code $code) : $Description" }
+        $lblSuiviStatus.Text = if ($script:jobWasStopped) { "Arrete par l'utilisateur : $Description" }
+                               elseif ($code -eq 0)        { "Termine sans echec : $Description" }
+                               else                         { "Termine (code $code) : $Description" }
         & $OnComplete $code
     }.GetNewClosure()
 
@@ -117,9 +123,72 @@ function Start-KitJob {
         # nommee explicitement en parametre -- constate en reproduisant le
         # bug (Get-SoulseekList.ps1 recevait 0 argument malgre -ArgumentList).
         param($Exe, $Path, $ScriptArguments)
+        # $PID ici est celui du processus pwsh qui heberge ce job (chaque
+        # Start-Job tourne dans son propre processus) -- on le publie tout de
+        # suite pour permettre au bouton "Arreter" de tuer tout l'arbre de
+        # processus (ce processus + le pwsh qu'il lance via `&` + sockseek.exe)
+        # d'un coup via Process.Kill($true).
+        [pscustomobject]@{ __JobHostPid = $PID }
         & $Exe -NoProfile -File $Path @ScriptArguments 2>&1 | ForEach-Object { "$_" }
         [pscustomobject]@{ __ExitCode = $LASTEXITCODE }
     } -ArgumentList $pwshExe, $ScriptPath, $ScriptArgs
+}
+
+function Stop-KitJob {
+    <# Tue de force le job en cours (arbre de processus complet) suite a une
+       demande explicite de l'utilisateur : un run sockseek peut prendre des
+       dizaines de minutes (limites de debit Soulseek) et rien ne permettait
+       jusqu'ici de l'interrompre sans fermer toute la fenetre. #>
+    if (-not $script:activeJob) { return }
+
+    $confirm = [System.Windows.Forms.MessageBox]::Show(
+        "Arreter l'operation en cours ? Les telechargements deja entames seront interrompus (les fichiers complets restent utilisables, sockseek reprendra les autres au prochain lancement).",
+        'Kit sockseek', 'YesNo', 'Question')
+    if ($confirm -ne 'Yes') { return }
+
+    $script:jobWasStopped = $true
+    $lblSuiviStatus.Text = "Arret en cours..."
+
+    if ($script:activeJobHostPid) {
+        try {
+            [System.Diagnostics.Process]::GetProcessById($script:activeJobHostPid).Kill($true)
+        }
+        catch {
+            Write-InterfaceError "Impossible de tuer le processus $($script:activeJobHostPid) : $($_.Exception.Message)"
+        }
+    }
+    else {
+        # Le marqueur __JobHostPid n'est pas encore arrive (job tout juste
+        # demarre) : Stop-Job reste le seul recours dans ce cas precis, meme
+        # s'il ne tue pas forcement le pwsh/sockseek.exe deja lances.
+        Stop-Job -Job $script:activeJob -ErrorAction SilentlyContinue
+    }
+
+    # Constate en le reproduisant : apres avoir tue de force le processus
+    # hebergeant le job, $job.State ne passe PAS forcement a Stopped/Failed
+    # (reste bloque a "Running" indefiniment) -- le Timer, qui attend ce
+    # changement d'etat, ne detecterait donc jamais la fin de l'operation et
+    # l'interface resterait verrouillee. Le nettoyage se fait donc ici,
+    # immediatement, plutot que d'attendre le prochain tick.
+    foreach ($item in (Receive-Job -Job $script:activeJob -ErrorAction SilentlyContinue)) {
+        if ($item -is [pscustomobject] -and $item.PSObject.Properties.Match('__ExitCode').Count -gt 0) {
+            $script:lastExitCode = $item.__ExitCode
+        }
+        elseif ($item -isnot [pscustomobject] -or $item.PSObject.Properties.Match('__JobHostPid').Count -eq 0) {
+            $txtLogSuivi.AppendText((Remove-AnsiCodes ([string]$item)) + [Environment]::NewLine)
+        }
+    }
+    Remove-Job -Job $script:activeJob -Force -ErrorAction SilentlyContinue
+
+    $onComplete = $script:activeOnComplete
+    $exitCode   = $script:lastExitCode
+
+    $script:activeJob        = $null
+    $script:activeOnComplete = $null
+    $script:activeJobHostPid = $null
+
+    Set-BusyState $false
+    & $onComplete $exitCode
 }
 
 # PowerShell 7 ecrit des codes couleur ANSI meme quand la sortie est
@@ -141,6 +210,9 @@ $jobTimer.Add_Tick({
         if ($item -is [pscustomobject] -and $item.PSObject.Properties.Match('__ExitCode').Count -gt 0) {
             $script:lastExitCode = $item.__ExitCode
         }
+        elseif ($item -is [pscustomobject] -and $item.PSObject.Properties.Match('__JobHostPid').Count -gt 0) {
+            $script:activeJobHostPid = $item.__JobHostPid
+        }
         else {
             $txtLogSuivi.AppendText((Remove-AnsiCodes ([string]$item)) + [Environment]::NewLine)
         }
@@ -153,6 +225,7 @@ $jobTimer.Add_Tick({
 
         $script:activeJob        = $null
         $script:activeOnComplete = $null
+        $script:activeJobHostPid = $null
 
         Set-BusyState $false
         & $onComplete $exitCode
@@ -714,7 +787,15 @@ $txtPlaylistSearch = [System.Windows.Forms.TextBox]::new()
 $txtPlaylistSearch.Width = 250
 $txtPlaylistSearch.Margin = [System.Windows.Forms.Padding]::new(3, 6, 3, 3)
 
-$barSearch.Controls.AddRange(@($lblSearch, $txtPlaylistSearch))
+$lblPlaylistsBusy = [System.Windows.Forms.Label]::new()
+$lblPlaylistsBusy.Text = 'Operation en cours (onglet Suivi) : la liste se mettra a jour a la fin.'
+$lblPlaylistsBusy.ForeColor = [System.Drawing.Color]::DarkOrange
+$lblPlaylistsBusy.Font = [System.Drawing.Font]::new($lblPlaylistsBusy.Font, [System.Drawing.FontStyle]::Bold)
+$lblPlaylistsBusy.AutoSize = $true
+$lblPlaylistsBusy.Margin = [System.Windows.Forms.Padding]::new(15, 9, 3, 3)
+$lblPlaylistsBusy.Visible = $false
+
+$barSearch.Controls.AddRange(@($lblSearch, $txtPlaylistSearch, $lblPlaylistsBusy))
 
 $panelPlaylistsTop = [System.Windows.Forms.Panel]::new()
 $panelPlaylistsTop.Dock = 'Fill'
@@ -857,17 +938,30 @@ $btnResumeSelected.Add_Click({
 $tabSuivi = [System.Windows.Forms.TabPage]::new("Suivi d'execution")
 $tabs.TabPages.Add($tabSuivi)
 
+$barSuivi = [System.Windows.Forms.FlowLayoutPanel]::new()
+$barSuivi.Dock = 'Top'
+$barSuivi.AutoSize = $true
+$barSuivi.Height = 40
+
 $lblSuiviStatus = [System.Windows.Forms.Label]::new()
-$lblSuiviStatus.Dock = 'Top'
-$lblSuiviStatus.AutoSize = $false
-$lblSuiviStatus.Height = 24
-$lblSuiviStatus.Padding = [System.Windows.Forms.Padding]::new(6)
+$lblSuiviStatus.AutoSize = $true
+$lblSuiviStatus.Margin = [System.Windows.Forms.Padding]::new(6, 12, 3, 3)
 $lblSuiviStatus.Text = "Pret. Rien n'a encore ete lance."
+
+$btnStopJob = [System.Windows.Forms.Button]::new()
+$btnStopJob.Text = "Arreter l'operation en cours"
+$btnStopJob.AutoSize = $true
+$btnStopJob.Enabled = $false
+$btnStopJob.Margin = [System.Windows.Forms.Padding]::new(15, 6, 3, 3)
+
+$barSuivi.Controls.AddRange(@($lblSuiviStatus, $btnStopJob))
+
+$btnStopJob.Add_Click({ Stop-KitJob })
 
 $txtLogSuivi = New-LogBox
 
 $tabSuivi.Controls.Add($txtLogSuivi)
-$tabSuivi.Controls.Add($lblSuiviStatus)
+$tabSuivi.Controls.Add($barSuivi)
 
 # ------------------------------------------------------- boutons a verrouiller
 $script:busyControls.AddRange(@(
