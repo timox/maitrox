@@ -38,6 +38,19 @@
     Avec -Download : n'affiche que ce que sockseek trouverait, sans rien
     telecharger. A faire au moins une fois avant de lancer pour de vrai.
 
+.PARAMETER CookiesFromBrowser
+    Reutilise la session d'un navigateur ou tu es deja connecte a
+    SoundCloud, pour les sets prives ou reserves aux abonnes. Un nom de
+    navigateur (brave, chrome, chromium, edge, firefox, opera, safari,
+    vivaldi, whale), pas un chemin d'executable : yt-dlp retrouve tout seul
+    le dossier de profil correspondant. SoundCloud n'accepte pas de simple
+    identifiant/mot de passe cote yt-dlp -- voir le fichier CHANGELOG ou
+    l'aide de yt-dlp pour --cookies-from-browser en cas de souci (verrouillage
+    du fichier de cookies si le navigateur est ouvert, par exemple).
+
+    Les sets "non listes" (lien avec ?secret_token=...) n'en ont pas besoin :
+    yt-dlp les gere deja tout seul.
+
 .EXAMPLE
     .\Get-SoulseekList.ps1 -Url "https://soundcloud.com/loleanto/sets/sans-retour-short"
 
@@ -46,6 +59,9 @@
 
 .EXAMPLE
     .\Get-SoulseekList.ps1 -Url $url -Download -OutputDir "D:\Music\techno"
+
+.EXAMPLE
+    .\Get-SoulseekList.ps1 -Url $url -CookiesFromBrowser firefox
 #>
 
 [CmdletBinding()]
@@ -60,7 +76,10 @@ param(
     [string] $SockseekPath,
     [pscredential] $Credential,
     [string] $OutputDir,
-    [switch] $PrintOnly
+    [switch] $PrintOnly,
+
+    [ValidateSet('brave', 'chrome', 'chromium', 'edge', 'firefox', 'opera', 'safari', 'vivaldi', 'whale')]
+    [string] $CookiesFromBrowser
 )
 
 $ErrorActionPreference = 'Stop'
@@ -87,7 +106,13 @@ if (-not (Get-Command yt-dlp -ErrorAction SilentlyContinue)) {
 
 Write-Host "Recuperation des metadonnees (une requete par piste, patience)..." -ForegroundColor Cyan
 
-$raw = & yt-dlp --skip-download --ignore-errors -J $Url
+$ytDlpArgs = @('--skip-download', '--ignore-errors', '-J')
+if ($CookiesFromBrowser) {
+    $ytDlpArgs += @('--cookies-from-browser', $CookiesFromBrowser)
+}
+$ytDlpArgs += $Url
+
+$raw = & yt-dlp @ytDlpArgs
 if (-not $raw) {
     throw "yt-dlp n'a rien renvoye. Verifie l'URL et l'accessibilite de la playlist."
 }

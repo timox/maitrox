@@ -36,9 +36,11 @@ Quatre onglets :
   / extraire seulement) et lance. Bascule automatiquement sur l'onglet Suivi
   d'exécution pour montrer la progression.
 - **Configuration** — installe ou met à jour sockseek et yt-dlp (PATH inclus)
-  en un clic, sans invite bloquante ; identifiants Soulseek (écrits
-  directement dans `sockseek.conf`, en préservant tes réglages existants) ;
-  dossier de destination par défaut.
+  en un clic, sans invite bloquante, avec vérification de version disponible
+  sur demande (bouton séparé, appelle l'API GitHub) ; identifiants Soulseek
+  (écrits directement dans `sockseek.conf`, en préservant tes réglages
+  existants), avec rappel du pseudo déjà enregistré s'il y en a un ; dossier
+  de destination par défaut.
 - **Playlists** — liste des playlists déjà traitées (le catalogue), avec le
   détail du dernier run pour celle sélectionnée (le `rapport.csv` par titre,
   et un bouton pour ouvrir le journal complet) ; boutons pour tester ou
@@ -49,10 +51,14 @@ Quatre onglets :
   raison que le kit ne lance jamais deux recherches Soulseek en parallèle
   (voir plus bas).
 
-⚠️ **Non testée en conditions réelles.** Cette interface a été écrite et
-relue par un modèle de langage sans jamais tourner sur une vraie machine
-Windows : `System.Windows.Forms` n'existe pas sous PowerShell 7 sur Linux,
-il n'y avait donc aucun moyen de l'exécuter pendant son développement. La
+⚠️ **Testée partiellement.** Un premier passage réel sur Windows a confirmé
+que la fenêtre s'affiche et fonctionne, et a fait remonter de vrais bugs
+depuis corrigés (arguments jamais transmis aux scripts lancés, codes
+couleur ANSI bruts dans le journal, boîtes trop étroites). Le reste a été
+écrit et relu par un modèle de langage sans jamais tourner sur une vraie
+machine Windows : `System.Windows.Forms` n'existe pas sous PowerShell 7 sur
+Linux, il n'y avait donc aucun moyen de l'exécuter pendant son
+développement. La
 logique non graphique qu'elle réutilise (lecture du catalogue, écriture de
 la configuration, gestion des jobs et codes de sortie) a été vérifiée
 séparément et fonctionne, mais la fenêtre elle-même — mise en page,
@@ -182,6 +188,29 @@ quand tu tapes un nouveau chemin dans son menu.
 | `-OutputDir` | Dossier de destination ; omis, reprend le défaut retenu (voir plus haut). Passé explicitement, devient le nouveau défaut |
 | `-SockseekPath` | Chemin du binaire si absent du PATH |
 | `-Credential` | Identifiants explicites, en dépannage |
+| `-CookiesFromBrowser` | Pour les sets privés/réservés aux abonnés SoundCloud (voir plus bas) |
+
+### Sets privés SoundCloud
+
+Un lien « non listé » (avec `?secret_token=...`) n'a besoin de rien de
+spécial : yt-dlp le gère déjà tout seul. Pour un set réellement privé
+(réservé aux abonnés, ou visible seulement une fois connecté), SoundCloud
+n'accepte pas de simple identifiant/mot de passe côté yt-dlp — un
+`--username`/`--password` classique échoue avec une erreur explicite côté
+yt-dlp. La seule option qui fonctionne est de réutiliser la session d'un
+navigateur où tu es déjà connecté :
+
+```powershell
+.\Get-SoulseekList.ps1 -Url $url -CookiesFromBrowser firefox
+```
+
+Valeurs acceptées : `brave`, `chrome`, `chromium`, `edge`, `firefox`,
+`opera`, `safari`, `vivaldi`, `whale` — un **nom**, pas un chemin vers
+l'exécutable : yt-dlp retrouve tout seul le dossier de profil du
+navigateur. Sur certains navigateurs, le fichier de cookies est verrouillé
+tant que le navigateur est ouvert ; ferme-le si l'extraction échoue.
+L'interface graphique propose la même option dans l'onglet « Nouvelle
+playlist ».
 
 ### Un sous-dossier par playlist
 

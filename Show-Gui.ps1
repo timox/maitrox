@@ -255,7 +255,6 @@ $topNew.SetColumnSpan($txtUrl, 2)
 
 $grpMode = [System.Windows.Forms.GroupBox]::new()
 $grpMode.Text = 'Mode'
-$grpMode.AutoSize = $true
 $grpMode.Width = 700
 $grpMode.Height = 90
 $rbTest = [System.Windows.Forms.RadioButton]::new()
@@ -286,11 +285,24 @@ $lblDestHint.AutoSize = $true
 $lblDestHint.ForeColor = [System.Drawing.Color]::Gray
 [void]$topNew.Controls.Add($lblDestHint, 2, 2)
 
+# Pour les sets prives/reserves aux abonnes SoundCloud : SoundCloud n'accepte
+# pas de simple identifiant/mot de passe cote yt-dlp, seule la reutilisation
+# d'une session de navigateur deja connecte fonctionne (voir --help). Les
+# sets "non listes" (lien avec secret_token) n'en ont pas besoin.
+$cmbCookiesBrowser = [System.Windows.Forms.ComboBox]::new()
+$cmbCookiesBrowser.DropDownStyle = 'DropDownList'
+$cmbCookiesBrowser.Dock = 'Fill'
+[void]$cmbCookiesBrowser.Items.AddRange(@(
+    '(aucun)', 'brave', 'chrome', 'chromium', 'edge', 'firefox', 'opera', 'safari', 'vivaldi', 'whale'
+))
+$cmbCookiesBrowser.SelectedIndex = 0
+New-FieldRow -Panel $topNew -Row 3 -LabelText 'Cookies depuis un navigateur (sets prives, optionnel) :' -Control $cmbCookiesBrowser
+
 $btnStart = [System.Windows.Forms.Button]::new()
 $btnStart.Text = 'Lancer'
 $btnStart.AutoSize = $true
 $btnStart.Font = [System.Drawing.Font]::new($form.Font, [System.Drawing.FontStyle]::Bold)
-[void]$topNew.Controls.Add($btnStart, 1, 3)
+[void]$topNew.Controls.Add($btnStart, 1, 4)
 
 $tabNew.AutoScroll = $true
 $tabNew.Controls.Add($topNew)
@@ -307,7 +319,12 @@ $btnStart.Add_Click({
                 elseif ($rbDownload.Checked) { @('-Download') }
                 else { @() }
 
-    Start-KitJob -ScriptPath $getListScript -ScriptArgs (@('-Url', $url) + $modeArgs) `
+    $cookiesArgs = @()
+    if ($cmbCookiesBrowser.SelectedItem -and $cmbCookiesBrowser.SelectedItem -ne '(aucun)') {
+        $cookiesArgs = @('-CookiesFromBrowser', $cmbCookiesBrowser.SelectedItem)
+    }
+
+    Start-KitJob -ScriptPath $getListScript -ScriptArgs (@('-Url', $url) + $modeArgs + $cookiesArgs) `
         -Description "extraction de la playlist" -OnComplete {
             param($code)
             Update-StateGrid $dgvPlaylists
@@ -332,9 +349,8 @@ $tabConfig.Controls.Add($topConfig)
 # --- etat des binaires --------------------------------------------------
 $grpBinaries = [System.Windows.Forms.GroupBox]::new()
 $grpBinaries.Text = 'Binaires (sockseek, yt-dlp)'
-$grpBinaries.AutoSize = $true
 $grpBinaries.Width = 700
-$grpBinaries.Height = 90
+$grpBinaries.Height = 110
 
 $lblBinStatus = [System.Windows.Forms.Label]::new()
 $lblBinStatus.Location = [System.Drawing.Point]::new(10, 25)
@@ -344,9 +360,14 @@ $lblBinStatus.Text = 'Verification...'
 $btnInstall = [System.Windows.Forms.Button]::new()
 $btnInstall.Text = 'Installer / mettre a jour'
 $btnInstall.AutoSize = $true
-$btnInstall.Location = [System.Drawing.Point]::new(10, 55)
+$btnInstall.Location = [System.Drawing.Point]::new(10, 70)
 
-$grpBinaries.Controls.AddRange(@($lblBinStatus, $btnInstall))
+$btnCheckUpdates = [System.Windows.Forms.Button]::new()
+$btnCheckUpdates.Text = 'Verifier les mises a jour'
+$btnCheckUpdates.AutoSize = $true
+$btnCheckUpdates.Location = [System.Drawing.Point]::new(180, 70)
+
+$grpBinaries.Controls.AddRange(@($lblBinStatus, $btnInstall, $btnCheckUpdates))
 [void]$topConfig.Controls.Add($grpBinaries, 0, 0)
 $topConfig.SetColumnSpan($grpBinaries, 3)
 
@@ -367,31 +388,102 @@ function Test-KitBinary {
     return $null
 }
 
+function Get-InstalledVersion {
+    <# Sockseek et yt-dlp supportent tous les deux --version. #>
+    param([string] $ExePath)
+    if (-not $ExePath) { return $null }
+    try {
+        $out = & $ExePath --version 2>$null
+        return ([string]($out | Select-Object -First 1)).Trim()
+    }
+    catch { return $null }
+}
+
+function Get-LatestReleaseTag {
+    <# Meme appel que Get-LatestAsset dans Install-Sockseek.ps1, simplifie :
+       ici on ne veut que le numero de version, pas l'URL de telechargement.
+       Echoue silencieusement (reseau, quota GitHub) -- ce n'est qu'une
+       verification, jamais bloquant pour le reste du kit. #>
+    param([Parameter(Mandatory)] [string] $Repo)
+    try {
+        $headers = @{ 'User-Agent' = 'sockseek-toolkit'; 'Accept' = 'application/vnd.github+json' }
+        $rel = Invoke-RestMethod -Uri "https://api.github.com/repos/$Repo/releases/latest" -Headers $headers -TimeoutSec 8
+        return $rel.tag_name
+    }
+    catch { return $null }
+}
+
 function Update-BinaryStatus {
-    $sock = Test-KitBinary -Names @('sockseek', 'sldl')
-    $yt   = Test-KitBinary -Names @('yt-dlp')
-    $sockTxt = if ($sock) { "sockseek : trouve ($sock)" } else { 'sockseek : introuvable' }
-    $ytTxt   = if ($yt)   { "yt-dlp : trouve ($yt)" }     else { 'yt-dlp : introuvable' }
-    $lblBinStatus.Text = "$sockTxt`r`n$ytTxt"
+    <# -CheckUpdates interroge GitHub (bloquant, quelques secondes) : reserve
+       au bouton dedie, jamais fait automatiquement (au demarrage, apres une
+       installation) pour ne pas ralentir ou surprendre par un appel reseau
+       inattendu. #>
+    param([switch] $CheckUpdates)
+
+    $sockPath = Test-KitBinary -Names @('sockseek', 'sldl')
+    $ytPath   = Test-KitBinary -Names @('yt-dlp')
+
+    $sockVersion = Get-InstalledVersion -ExePath $sockPath
+    $ytVersion   = Get-InstalledVersion -ExePath $ytPath
+
+    $sockLine = if ($sockPath) { "sockseek : trouve, version $sockVersion ($sockPath)" }
+                else { 'sockseek : introuvable' }
+    $ytLine   = if ($ytPath) { "yt-dlp : trouve, version $ytVersion ($ytPath)" }
+                else { 'yt-dlp : introuvable' }
+
+    if ($CheckUpdates) {
+        if ($sockPath) {
+            $latest = Get-LatestReleaseTag -Repo 'fiso64/sockseek'
+            $sockLine += if (-not $latest) { ' -- verification impossible (reseau/quota GitHub)' }
+                         elseif ($sockVersion -and $latest.TrimStart('v') -ne $sockVersion) { " -- mise a jour disponible : $latest" }
+                         else { ' -- a jour' }
+        }
+        if ($ytPath) {
+            $latestYt = Get-LatestReleaseTag -Repo 'yt-dlp/yt-dlp'
+            $ytLine += if (-not $latestYt) { ' -- verification impossible (reseau/quota GitHub)' }
+                       elseif ($ytVersion -and $ytVersion -ne $latestYt) { " -- mise a jour disponible : $latestYt" }
+                       else { ' -- a jour' }
+        }
+    }
+
+    $lblBinStatus.Text = "$sockLine`r`n$ytLine"
 }
 
 $btnInstall.Add_Click({
     Start-KitJob -ScriptPath $installScript -ScriptArgs @('-SkipCredentials') `
         -Description 'installation des binaires' -OnComplete {
             param($code)
+            # Le processus GUI a demarre avant l'installation : son PATH ne
+            # voit pas encore le nouveau dossier tant qu'on ne l'ajoute pas
+            # nous-memes (comme le fait deja Install-Sockseek.ps1 pour lui-
+            # meme). Sans ca, "introuvable" persisterait jusqu'a redemarrer
+            # toute la fenetre.
+            if ($env:Path -notlike "*$defaultInstallDir*") {
+                $env:Path = $env:Path.TrimEnd(';') + ';' + $defaultInstallDir
+            }
             Update-BinaryStatus
         }.GetNewClosure()
+})
+
+$btnCheckUpdates.Add_Click({
+    $lblBinStatus.Text = 'Verification des mises a jour...'
+    Update-BinaryStatus -CheckUpdates
 })
 
 # --- identifiants soulseek -----------------------------------------------
 $grpCreds = [System.Windows.Forms.GroupBox]::new()
 $grpCreds.Text = 'Identifiants Soulseek'
-$grpCreds.AutoSize = $true
 $grpCreds.Width = 700
-$grpCreds.Height = 150
+$grpCreds.Height = 175
+
+$lblConfigStatus = [System.Windows.Forms.Label]::new()
+$lblConfigStatus.Location = [System.Drawing.Point]::new(10, 20)
+$lblConfigStatus.AutoSize = $true
+$lblConfigStatus.Font = [System.Drawing.Font]::new($form.Font, [System.Drawing.FontStyle]::Bold)
+$lblConfigStatus.Text = 'Configuration actuelle : verification...'
 
 $lblCredsHint = [System.Windows.Forms.Label]::new()
-$lblCredsHint.Location = [System.Drawing.Point]::new(10, 20)
+$lblCredsHint.Location = [System.Drawing.Point]::new(10, 42)
 $lblCredsHint.AutoSize = $true
 $lblCredsHint.MaximumSize = [System.Drawing.Size]::new(860, 0)
 $lblCredsHint.ForeColor = [System.Drawing.Color]::DimGray
@@ -399,29 +491,53 @@ $lblCredsHint.Text = "Le compte n'a pas besoin d'exister au prealable : le serve
 
 $lblUser = [System.Windows.Forms.Label]::new()
 $lblUser.Text = 'Pseudo :'
-$lblUser.Location = [System.Drawing.Point]::new(10, 55)
+$lblUser.Location = [System.Drawing.Point]::new(10, 77)
 $lblUser.AutoSize = $true
 $txtConfUser = [System.Windows.Forms.TextBox]::new()
-$txtConfUser.Location = [System.Drawing.Point]::new(90, 52)
+$txtConfUser.Location = [System.Drawing.Point]::new(90, 74)
 $txtConfUser.Width = 250
 
 $lblPass = [System.Windows.Forms.Label]::new()
 $lblPass.Text = 'Mot de passe :'
-$lblPass.Location = [System.Drawing.Point]::new(10, 85)
+$lblPass.Location = [System.Drawing.Point]::new(10, 107)
 $lblPass.AutoSize = $true
 $txtConfPass = [System.Windows.Forms.TextBox]::new()
-$txtConfPass.Location = [System.Drawing.Point]::new(90, 82)
+$txtConfPass.Location = [System.Drawing.Point]::new(90, 104)
 $txtConfPass.Width = 250
 $txtConfPass.UseSystemPasswordChar = $true
 
 $btnSaveCreds = [System.Windows.Forms.Button]::new()
 $btnSaveCreds.Text = 'Enregistrer les identifiants'
 $btnSaveCreds.AutoSize = $true
-$btnSaveCreds.Location = [System.Drawing.Point]::new(10, 115)
+$btnSaveCreds.Location = [System.Drawing.Point]::new(10, 137)
 
-$grpCreds.Controls.AddRange(@($lblCredsHint, $lblUser, $txtConfUser, $lblPass, $txtConfPass, $btnSaveCreds))
+$grpCreds.Controls.AddRange(@($lblConfigStatus, $lblCredsHint, $lblUser, $txtConfUser, $lblPass, $txtConfPass, $btnSaveCreds))
 [void]$topConfig.Controls.Add($grpCreds, 0, 1)
 $topConfig.SetColumnSpan($grpCreds, 3)
+
+function Update-ConfigStatus {
+    <# N'affiche jamais le mot de passe : seul le pseudo deja enregistre est
+       relu et pre-rempli. #>
+    $confPath = Get-SockseekConfPath
+    if (-not (Test-Path -LiteralPath $confPath)) {
+        $lblConfigStatus.Text = 'Configuration actuelle : aucune (sockseek.conf absent)'
+        $lblConfigStatus.ForeColor = [System.Drawing.Color]::DarkRed
+        return
+    }
+
+    $userLine = Get-Content -LiteralPath $confPath -Encoding utf8 -ErrorAction SilentlyContinue |
+                Where-Object { $_ -match '^\s*username\s*=' } | Select-Object -First 1
+    if ($userLine -and $userLine -match '^\s*username\s*=\s*(.+?)\s*$') {
+        $existingUser = $matches[1]
+        $lblConfigStatus.Text = "Configuration actuelle : identifiants enregistres pour '$existingUser'"
+        $lblConfigStatus.ForeColor = [System.Drawing.Color]::DarkGreen
+        if ([string]::IsNullOrWhiteSpace($txtConfUser.Text)) { $txtConfUser.Text = $existingUser }
+    }
+    else {
+        $lblConfigStatus.Text = 'Configuration actuelle : sockseek.conf existe, mais aucun pseudo lisible'
+        $lblConfigStatus.ForeColor = [System.Drawing.Color]::DarkOrange
+    }
+}
 
 $btnSaveCreds.Add_Click({
     $u = $txtConfUser.Text.Trim()
@@ -434,6 +550,7 @@ $btnSaveCreds.Add_Click({
     try {
         Set-SockseekCredentials -Username $u -Password $p
         $txtConfPass.Text = ''
+        Update-ConfigStatus
         [System.Windows.Forms.MessageBox]::Show('Identifiants enregistres dans sockseek.conf.',
             'Kit sockseek', 'OK', 'Information') | Out-Null
     }
@@ -446,7 +563,6 @@ $btnSaveCreds.Add_Click({
 # --- dossier de destination par defaut ------------------------------------
 $grpDest = [System.Windows.Forms.GroupBox]::new()
 $grpDest.Text = 'Dossier de destination par defaut'
-$grpDest.AutoSize = $true
 $grpDest.Width = 700
 $grpDest.Height = 70
 
@@ -700,12 +816,13 @@ $tabSuivi.Controls.Add($lblSuiviStatus)
 
 # ------------------------------------------------------- boutons a verrouiller
 $script:busyControls.AddRange(@(
-    $btnStart, $btnInstall,
+    $btnStart, $btnInstall, $btnCheckUpdates,
     $btnRefreshPlaylists, $btnResumeAll, $btnTestSelected, $btnResumeSelected
 ))
 
 # ---------------------------------------------------------------- demarrage
 Update-BinaryStatus
+Update-ConfigStatus
 Update-StateGrid $dgvPlaylists
 Update-PlaylistDetail -SelectedRow $null
 $splitPl.SplitterDistance = [int]($form.Height * 0.4)
