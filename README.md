@@ -41,7 +41,13 @@ Quatre onglets :
   sur demande (bouton séparé, appelle l'API GitHub) ; identifiants Soulseek
   (écrits directement dans `sockseek.conf`, en préservant tes réglages
   existants), avec rappel du pseudo déjà enregistré s'il y en a un ; dossier
-  de destination par défaut.
+  de destination par défaut ; import d'un dossier de téléchargement existant
+  (déplacé à la main, ou téléchargé avant l'existence du catalogue
+  centralisé) — retrouve son `_index.csv` (ou balaie les fichiers audio s'il
+  n'y en a pas) et l'enregistre dans le catalogue sans rien retélécharger,
+  pour le faire réapparaître dans l'onglet Playlists et permettre une
+  reprise normale. Réimporter le même dossier met simplement à jour l'entrée
+  existante au lieu d'en créer une seconde.
 - **Playlists** — liste des playlists déjà traitées (le catalogue), avec le
   détail du dernier run pour celle sélectionnée (le `rapport.csv` par titre,
   et un bouton pour ouvrir le journal complet) ; boutons pour tester ou

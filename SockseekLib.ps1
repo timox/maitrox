@@ -556,6 +556,65 @@ function Register-Playlist {
     Save-Catalogue $entries
 }
 
+function Import-PlaylistFolder {
+    <# Rend gerable, depuis l'onglet Playlists, un dossier de telechargement
+       existant jamais enregistre dans le catalogue centralise -- deplace a
+       la main, telecharge avant l'introduction de ce catalogue, ou produit
+       sur une autre machine. Aucune extraction n'est relancee : on relit
+       juste ce qui est deja sur le disque.
+
+       La cle du catalogue est l'URL d'origine (voir Register-Playlist),
+       perdue pour un dossier importe : on fabrique donc un identifiant
+       stable a partir du chemin du dossier -- reimporter le meme dossier
+       met a jour l'entree plutot que d'en creer une seconde. #>
+    param(
+        [Parameter(Mandatory)] [string] $FolderPath,
+        [string] $Name
+    )
+
+    if (-not (Test-Path -LiteralPath $FolderPath -PathType Container)) {
+        throw "Dossier introuvable : $FolderPath"
+    }
+    $resolved = (Resolve-Path -LiteralPath $FolderPath).Path
+
+    $indexPath = Get-ChildItem -Path $resolved -Recurse -File -Filter '_index.csv' -ErrorAction SilentlyContinue |
+                 Sort-Object LastWriteTime -Descending | Select-Object -First 1 |
+                 ForEach-Object { $_.FullName }
+
+    # playlist-clean.csv est le nom par defaut de Get-SoulseekList.ps1, mais
+    # n'importe quel CSV avec des colonnes Artist/Title fait l'affaire pour
+    # detecter les titres jamais tentes (voir Get-RunResults) -- utile si le
+    # fichier a ete renomme ou copie a la main dans le dossier importe.
+    $sourceCsv = Get-ChildItem -Path $resolved -File -Filter '*.csv' -ErrorAction SilentlyContinue |
+                 Where-Object { $_.Name -notin @('_index.csv', 'rapport.csv') } |
+                 Sort-Object LastWriteTime -Descending | Select-Object -First 1 |
+                 ForEach-Object { $_.FullName }
+    if (-not $sourceCsv) { $sourceCsv = Join-Path $resolved 'playlist-clean.csv' }
+
+    if (-not $Name) { $Name = Split-Path -Leaf $resolved }
+
+    $results = @(Get-RunResults -IndexPath $indexPath -OutputDir $resolved -SourceCsv $sourceCsv)
+    if ($results.Count -eq 0) {
+        throw "Aucun index sockseek (_index.csv) ni fichier audio trouve dans ce dossier : $resolved"
+    }
+    $total = $results.Count
+    $ok    = @($results | Where-Object { $_.Reussi }).Count
+
+    $url = "local-import://$resolved"
+    Register-Playlist -Url $url -OutputDir $resolved -SourceCsv $sourceCsv `
+                       -IndexPath $indexPath -Name $Name -Total $total -Ok $ok
+
+    return [pscustomobject]@{
+        Name      = $Name
+        OutputDir = $resolved
+        IndexPath = $indexPath
+        SourceCsv = $sourceCsv
+        Total     = $total
+        Ok        = $ok
+        Manquants = $total - $ok
+    }
+}
+
 function Get-PlaylistPending {
     <# Retourne les titres non recuperes d'une entree de catalogue. #>
     param([Parameter(Mandatory)] $Entry)
