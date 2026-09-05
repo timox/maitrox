@@ -26,6 +26,13 @@
 .PARAMETER SkipExecutionPolicy
     Ne touche pas a la politique d'execution PowerShell.
 
+.PARAMETER SkipCredentials
+    Installe les binaires et regle le PATH sans toucher a sockseek.conf :
+    ni prompt interactif, ni ecrasement d'une configuration existante. Utile
+    pour un lancement non interactif (bouton d'une interface graphique par
+    exemple) ; les identifiants se configurent alors separement, avec
+    Set-SockseekCredentials (SockseekLib.ps1).
+
 .PARAMETER SockseekUrl
 .PARAMETER YtDlpUrl
     URL de telechargement directe, pour contourner l'API GitHub si elle est
@@ -45,6 +52,7 @@ param(
     [string] $MusicDir   = (Join-Path $HOME 'Music' 'sockseek'),
     [switch] $Force,
     [switch] $SkipExecutionPolicy,
+    [switch] $SkipCredentials,
     [string] $SockseekUrl,
     [string] $YtDlpUrl
 )
@@ -230,7 +238,11 @@ Write-Step "Configuration"
 $confDir  = Join-Path $env:APPDATA 'sockseek'
 $confFile = Join-Path $confDir 'sockseek.conf'
 
-if ((Test-Path $confFile) -and -not $Force) {
+if ($SkipCredentials) {
+    Write-Info "-SkipCredentials : ni prompt, ni ecriture de sockseek.conf."
+    Write-Info "Configure les identifiants separement (Set-SockseekCredentials)."
+}
+elseif ((Test-Path $confFile) -and -not $Force) {
     Write-Info "sockseek.conf existe deja : $confFile"
     Write-Info "-Force pour le regenerer."
 }
@@ -284,14 +296,19 @@ Remove-Item -Path $tmp -Recurse -Force -ErrorAction SilentlyContinue
 Write-Step "Verification"
 $okSock = Test-Path $sockExe
 $okYt   = Test-Path $ytExe
-$okConf = Test-Path $confFile
+$okConf = $SkipCredentials -or (Test-Path $confFile)
 
 Write-Host ("   sockseek      : " + $(if ($okSock) { 'OK' } else { 'MANQUANT' })) `
     -ForegroundColor $(if ($okSock) { 'Green' } else { 'Red' })
 Write-Host ("   yt-dlp        : " + $(if ($okYt)   { 'OK' } else { 'MANQUANT' })) `
     -ForegroundColor $(if ($okYt)   { 'Green' } else { 'Red' })
-Write-Host ("   configuration : " + $(if ($okConf) { 'OK' } else { 'MANQUANT' })) `
-    -ForegroundColor $(if ($okConf) { 'Green' } else { 'Red' })
+if ($SkipCredentials) {
+    Write-Host "   configuration : ignoree (-SkipCredentials)" -ForegroundColor DarkGray
+}
+else {
+    Write-Host ("   configuration : " + $(if ($okConf) { 'OK' } else { 'MANQUANT' })) `
+        -ForegroundColor $(if ($okConf) { 'Green' } else { 'Red' })
+}
 
 if ($okSock -and $okYt -and $okConf) {
     Write-Host @"
