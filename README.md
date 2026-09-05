@@ -9,20 +9,57 @@ obtenus avec un rapport détaillé de ce qui a échoué et pourquoi.
 | Fichier | Rôle |
 |---|---|
 | `installer.bat` | **Double-clic : installe tout** |
-| `lancer.bat` | **Double-clic : nouvelle playlist, reprise, ou état** |
-| `reprendre.bat` | Double-clic : va direct au menu de reprise, sans passer par celui de `lancer.bat` |
+| `gui.bat` | **Double-clic : interface graphique** — trouve `pwsh` et lance `Show-Gui.ps1` |
+| `lancer.bat` | Double-clic : menu console (nouvelle playlist, reprise, état) — trouve `pwsh` et lance `Menu.ps1` |
+| `reprendre.bat` | Double-clic : va direct au menu de reprise console, sans passer par celui de `lancer.bat` |
+| `Show-Gui.ps1` | L'interface graphique elle-même (Windows Forms) |
+| `Menu.ps1` | Le menu interactif console ; tout le cheminement (retours, sortie) y vit |
 | `Install-Sockseek.ps1` | Télécharge les binaires, crée la configuration, règle le PATH |
 | `Get-SoulseekList.ps1` | Extraction, nettoyage, téléchargement, rapport |
 | `Build-Playlist.ps1` | Rapport et playlist seuls, réutilisable après un run manuel |
 | `Resume-Downloads.ps1` | Reprise groupée des titres manquants, toutes playlists |
 | `SockseekLib.ps1` | Fonctions partagées, pas destiné à être lancé seul |
 
-Si tu n'as pas envie de toucher à une ligne de commande, les deux `.bat`
-suffisent : double-clic sur `installer.bat` une fois, puis sur `lancer.bat`
-pour tout le reste. Son menu propose de traiter une nouvelle playlist, de
-reprendre les titres manquants, ou de consulter l'état des playlists déjà
-traitées. Le reste de ce document décrit ce qu'ils font et comment piloter les
+Si tu n'as pas envie de toucher à une ligne de commande, double-clic sur
+`installer.bat` une fois, puis sur `gui.bat` pour tout le reste : une
+fenêtre avec quatre onglets (Nouvelle playlist, Configuration, Playlists,
+Suivi d'exécution — détail plus bas). `lancer.bat` propose la même chose en
+mode texte dans une console, pour qui préfère ça ou travaille par SSH. Le
+reste de ce document décrit ce que ces outils font et comment piloter les
 scripts directement.
+
+### Interface graphique (`gui.bat`)
+
+Quatre onglets :
+
+- **Nouvelle playlist** — colle une URL, choisis le mode (tester / télécharger
+  / extraire seulement) et lance. Bascule automatiquement sur l'onglet Suivi
+  d'exécution pour montrer la progression.
+- **Configuration** — installe ou met à jour sockseek et yt-dlp (PATH inclus)
+  en un clic, sans invite bloquante ; identifiants Soulseek (écrits
+  directement dans `sockseek.conf`, en préservant tes réglages existants) ;
+  dossier de destination par défaut.
+- **Playlists** — liste des playlists déjà traitées (le catalogue), avec le
+  détail du dernier run pour celle sélectionnée (le `rapport.csv` par titre,
+  et un bouton pour ouvrir le journal complet) ; boutons pour tester ou
+  reprendre la playlist sélectionnée, ou tout reprendre d'un coup.
+- **Suivi d'exécution** — le journal en direct de l'opération en cours (ou de
+  la dernière terminée). Une seule opération à la fois : lancer une nouvelle
+  action pendant qu'une autre tourne est refusé, exactement pour la même
+  raison que le kit ne lance jamais deux recherches Soulseek en parallèle
+  (voir plus bas).
+
+⚠️ **Non testée en conditions réelles.** Cette interface a été écrite et
+relue par un modèle de langage sans jamais tourner sur une vraie machine
+Windows : `System.Windows.Forms` n'existe pas sous PowerShell 7 sur Linux,
+il n'y avait donc aucun moyen de l'exécuter pendant son développement. La
+logique non graphique qu'elle réutilise (lecture du catalogue, écriture de
+la configuration, gestion des jobs et codes de sortie) a été vérifiée
+séparément et fonctionne, mais la fenêtre elle-même — mise en page,
+événements, tout ce qui dépend réellement de Windows Forms — n'a pas pu
+l'être. Si quelque chose se comporte mal, dis-le : ça se corrige vite une
+fois le symptôme connu. En cas de souci bloquant, `lancer.bat` (menu
+console) offre exactement les mêmes actions.
 
 ## Prérequis
 
@@ -225,7 +262,12 @@ vaut mieux que plusieurs relances concurrentes.
 
 Double-clique sur **`lancer.bat`** et choisis « Reprendre les titres
 manquants » (ou directement sur **`reprendre.bat`**, qui saute droit à ce
-menu), ou en ligne de commande :
+menu). Le menu de reprise affiche d'abord l'état actuel, puis propose de
+voir la liste avant de relancer, de tout reprendre, ou de ne reprendre
+qu'une playlist en particulier (la seule granularité disponible : le script
+filtre par playlist, pas titre par titre) — avec, à chaque étape, un retour
+possible au menu de reprise ou au menu principal plutôt qu'une sortie
+immédiate. En ligne de commande :
 
 ```powershell
 .\Resume-Downloads.ps1 -List      # état des playlists, sans rien relancer

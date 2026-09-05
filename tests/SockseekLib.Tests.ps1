@@ -283,3 +283,55 @@ Describe 'Get-DefaultOutputDir / Set-DefaultOutputDir' {
         Get-DefaultOutputDir | Should -Be 'D:\Ailleurs'
     }
 }
+
+Describe 'Set-SockseekCredentials' {
+    BeforeAll {
+        $script:confTestDir = Join-Path ([IO.Path]::GetTempPath()) "sockseek-conf-$([guid]::NewGuid().Guid.Substring(0,8))"
+        New-Item -ItemType Directory -Path $confTestDir -Force | Out-Null
+        $script:confTestPath = Join-Path $confTestDir 'sockseek.conf'
+    }
+
+    AfterAll {
+        Remove-Item -LiteralPath $confTestDir -Recurse -Force -ErrorAction SilentlyContinue
+    }
+
+    AfterEach {
+        Remove-Item -LiteralPath $confTestPath -Force -ErrorAction SilentlyContinue
+    }
+
+    It "cree le fichier s'il n'existe pas, avec username/password/output-dir" {
+        Set-SockseekCredentials -Username 'alice' -Password 'secret1' -OutputDir 'D:\Music' -ConfPath $confTestPath
+        $content = Get-Content -LiteralPath $confTestPath -Raw
+        $content | Should -Match 'username = alice'
+        $content | Should -Match 'password = secret1'
+        $content | Should -Match 'output-dir = D:\\Music'
+    }
+
+    It 'ne renvoie pas une liste vide -> $null (regression sur if/else comme expression)' {
+        # Le premier appel part d'un fichier inexistant : $lines demarre comme
+        # une liste vide. Si Set-SockseekCredentials ne cree rien, le fichier
+        # reste absent -- exactement le symptome du bug corrige.
+        Set-SockseekCredentials -Username 'x' -Password 'y' -ConfPath $confTestPath
+        Test-Path -LiteralPath $confTestPath | Should -BeTrue
+    }
+
+    It "met a jour username/password sans toucher aux autres reglages" {
+        @'
+# commentaire utilisateur
+username = old
+password = oldpass
+pref-format = flac
+length-tol = 5
+'@ | Set-Content -LiteralPath $confTestPath -Encoding utf8NoBOM
+
+        Set-SockseekCredentials -Username 'bob' -Password 'newpass' -ConfPath $confTestPath
+
+        $content = Get-Content -LiteralPath $confTestPath
+        $content | Should -Contain '# commentaire utilisateur'
+        $content | Should -Contain 'username = bob'
+        $content | Should -Contain 'password = newpass'
+        $content | Should -Contain 'pref-format = flac'
+        $content | Should -Contain 'length-tol = 5'
+        ($content | Where-Object { $_ -match '^username' }).Count | Should -Be 1
+    }
+}

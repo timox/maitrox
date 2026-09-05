@@ -427,6 +427,53 @@ function Set-DefaultOutputDir {
         Set-Content -LiteralPath $path -Encoding utf8NoBOM
 }
 
+function Get-SockseekConfPath {
+    $dir = if ($env:APPDATA) { [IO.Path]::Combine($env:APPDATA, 'sockseek') }
+           else { [IO.Path]::Combine($HOME, '.config', 'sockseek') }
+    return [IO.Path]::Combine($dir, 'sockseek.conf')
+}
+
+function Set-SockseekCredentials {
+    <# Ecrit ou met a jour username/password (et, si fourni, output-dir) dans
+       sockseek.conf, sans toucher au reste du fichier (profils, autres
+       reglages) ni exiger de prompt interactif -- utilisable depuis un
+       bouton d'interface graphique. Cree le fichier s'il n'existe pas. #>
+    param(
+        [Parameter(Mandatory)] [string] $Username,
+        [Parameter(Mandatory)] [string] $Password,
+        [string] $OutputDir,
+        [string] $ConfPath = (Get-SockseekConfPath)
+    )
+
+    # Assignation dans chaque branche plutot que $lines = if (...) {...} else
+    # {...} : une List vide capturee comme "valeur" d'un bloc if/else est
+    # deroulee (enumeree) par PowerShell et disparait -- $lines vaudrait $null.
+    if (Test-Path -LiteralPath $ConfPath) {
+        $lines = [System.Collections.Generic.List[string]]::new([string[]](Get-Content -LiteralPath $ConfPath -Encoding utf8))
+    }
+    else {
+        $lines = [System.Collections.Generic.List[string]]::new()
+    }
+
+    function local:Set-ConfLine {
+        param($Lines, [string] $Key, [string] $Value)
+        $pattern = "^\s*$([regex]::Escape($Key))\s*="
+        $idx = -1
+        for ($i = 0; $i -lt $Lines.Count; $i++) {
+            if ($Lines[$i] -match $pattern) { $idx = $i; break }
+        }
+        $newLine = "$Key = $Value"
+        if ($idx -ge 0) { $Lines[$idx] = $newLine } else { $Lines.Add($newLine) }
+    }
+
+    Set-ConfLine $lines 'username' $Username
+    Set-ConfLine $lines 'password' $Password
+    if ($OutputDir) { Set-ConfLine $lines 'output-dir' $OutputDir }
+
+    New-Item -ItemType Directory -Path (Split-Path -Parent $ConfPath) -Force | Out-Null
+    $lines | Set-Content -LiteralPath $ConfPath -Encoding utf8NoBOM
+}
+
 function ConvertTo-SafeFolderName {
     <# Nom de playlist -> nom de dossier valide sur Windows comme sur Unix.
        Liste figee plutot que [IO.Path]::GetInvalidFileNameChars() : cette

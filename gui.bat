@@ -7,14 +7,17 @@ cd /d "%~dp0"
 call :FindPwsh
 if errorlevel 1 goto NoPwsh
 
-REM Toute la logique de menu vit dans Menu.ps1 (PowerShell) : ce fichier ne
-REM sert qu'a trouver pwsh et a le lancer. Une URL passee en argument saute
-REM directement au traitement, comme avant.
-"%PWSH%" -NoProfile -ExecutionPolicy Bypass -File "%~dp0Menu.ps1" -Url "%~1"
+REM -sta : System.Windows.Forms exige un thread STA. Show-Gui.ps1 se
+REM relance lui-meme avec -sta s'il ne l'est pas deja, donc ce n'est pas
+REM strictement indispensable ici, mais evite un aller-retour inutile.
+"%PWSH%" -NoProfile -sta -ExecutionPolicy Bypass -File "%~dp0Show-Gui.ps1"
 set CODE=%ERRORLEVEL%
 
-echo.
-pause
+if not %CODE%==0 (
+    echo.
+    echo L'interface graphique s'est terminee avec le code %CODE%.
+    pause
+)
 exit /b %CODE%
 
 
