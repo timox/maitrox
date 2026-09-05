@@ -233,6 +233,33 @@ $jobTimer.Add_Tick({
 })
 
 # ============================================================== catalogue =
+function ConvertTo-DataTable {
+    <# Lier DataGridView.DataSource directement a un tableau de
+       [pscustomobject] ne genere parfois AUCUNE colonne (grille vide, sans
+       meme les en-tetes) sous PowerShell 7/.NET -- le TypeDescriptor dont
+       depend ce lien ne "voit" pas toujours les proprietes dynamiques d'un
+       PSObject de la meme facon qu'avec Windows PowerShell 5.1/.NET
+       Framework. Un System.Data.DataTable, lui, est toujours reconnu.
+       Colonnes en texte : certaines lignes (cf. Get-StateRows en cas
+       d'erreur de lecture) melangent nombres et "?", ce qu'une colonne
+       typee refuserait. #>
+    param([object[]] $InputObject)
+    $table = [System.Data.DataTable]::new()
+    $rows = @($InputObject)
+    if ($rows.Count -eq 0) { return , $table }
+    foreach ($prop in $rows[0].PSObject.Properties) {
+        [void]$table.Columns.Add($prop.Name, [string])
+    }
+    foreach ($row in $rows) {
+        $dr = $table.NewRow()
+        foreach ($prop in $row.PSObject.Properties) {
+            $dr[$prop.Name] = if ($null -eq $prop.Value) { '' } else { [string]$prop.Value }
+        }
+        $table.Rows.Add($dr)
+    }
+    return , $table
+}
+
 function Write-InterfaceError {
     <# Rend une erreur visible dans le journal au lieu de la laisser
        silencieuse ou de planter tout l'appelant. $txtLogSuivi peut ne pas
@@ -287,15 +314,23 @@ function Update-StateGrid {
     param([Parameter(Mandatory)] [System.Windows.Forms.DataGridView] $Grid)
     try {
         $rows = Get-StateRows
+        $totalCount = @($rows).Count
         $filter = if ($txtPlaylistSearch) { $txtPlaylistSearch.Text.Trim() } else { '' }
         if ($filter) {
             $rows = , @($rows | Where-Object { $_.Playlist -like "*$filter*" })
         }
         $Grid.DataSource = $null
-        $Grid.DataSource = $rows
+        $Grid.DataSource = ConvertTo-DataTable $rows
+        if ($lblPlaylistsInfo) {
+            $shown = @($rows).Count
+            $countText = if ($filter) { "$shown / $totalCount playlist(s) (filtre actif)" }
+                         else { "$totalCount playlist(s)" }
+            $lblPlaylistsInfo.Text = "$countText -- catalogue : $(Get-CataloguePath)"
+        }
     }
     catch {
         Write-InterfaceError "Impossible d'actualiser la liste des playlists : $($_.Exception.Message)"
+        if ($lblPlaylistsInfo) { $lblPlaylistsInfo.Text = "Erreur de chargement -- voir l'onglet Suivi." }
     }
 }
 
@@ -795,7 +830,18 @@ $lblPlaylistsBusy.AutoSize = $true
 $lblPlaylistsBusy.Margin = [System.Windows.Forms.Padding]::new(15, 9, 3, 3)
 $lblPlaylistsBusy.Visible = $false
 
-$barSearch.Controls.AddRange(@($lblSearch, $txtPlaylistSearch, $lblPlaylistsBusy))
+# Toujours visible (contrairement a $lblPlaylistsBusy) : affiche le nombre de
+# lignes reellement chargees et le fichier catalogue lu, pour distinguer d'un
+# coup d'oeil "catalogue vide/introuvable" d'un vrai bug d'affichage de la
+# grille -- sans ca, une grille vide ne dit pas si Update-StateGrid a meme
+# ete appelee ni ce qu'elle a trouve.
+$lblPlaylistsInfo = [System.Windows.Forms.Label]::new()
+$lblPlaylistsInfo.AutoSize = $true
+$lblPlaylistsInfo.ForeColor = [System.Drawing.Color]::DimGray
+$lblPlaylistsInfo.Margin = [System.Windows.Forms.Padding]::new(15, 9, 3, 3)
+$lblPlaylistsInfo.Text = 'Chargement...'
+
+$barSearch.Controls.AddRange(@($lblSearch, $txtPlaylistSearch, $lblPlaylistsBusy, $lblPlaylistsInfo))
 
 $panelPlaylistsTop = [System.Windows.Forms.Panel]::new()
 $panelPlaylistsTop.Dock = 'Fill'
@@ -862,7 +908,7 @@ function Update-PlaylistDetail {
 
         $rapportPath = Join-Path $dossier 'rapport.csv'
         if (Test-Path -LiteralPath $rapportPath) {
-            $dgvDetail.DataSource = , @(Import-Csv -LiteralPath $rapportPath)
+            $dgvDetail.DataSource = ConvertTo-DataTable @(Import-Csv -LiteralPath $rapportPath)
         }
 
         $latestLog = Get-ChildItem -LiteralPath $dossier -Filter 'sockseek-*.log' -ErrorAction SilentlyContinue |
