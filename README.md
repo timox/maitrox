@@ -10,6 +10,7 @@ obtenus avec un rapport détaillé de ce qui a échoué et pourquoi.
 |---|---|
 | `installer.bat` | **Double-clic : installe tout** |
 | `lancer.bat` | **Double-clic : nouvelle playlist, reprise, ou état** |
+| `reprendre.bat` | Double-clic : va direct au menu de reprise, sans passer par celui de `lancer.bat` |
 | `Install-Sockseek.ps1` | Télécharge les binaires, crée la configuration, règle le PATH |
 | `Get-SoulseekList.ps1` | Extraction, nettoyage, téléchargement, rapport |
 | `Build-Playlist.ps1` | Rapport et playlist seuls, réutilisable après un run manuel |
@@ -168,6 +169,8 @@ Chaque échec est classé :
 | Problème réseau ou pair injoignable | Le pair a lâché | Relancer, ça repart souvent |
 | Fichier absent du disque | Index optimiste | Fichier déplacé ou supprimé après coup |
 | Jamais traité | Absent de l'index | Run interrompu |
+| Annulé | Recherche interrompue côté sockseek | Relancer |
+| Échec (cause non précisée) | L'index marque l'échec sans motif exploitable | Voir le journal détaillé |
 
 Deux fichiers sont produits dans le dossier de sortie : `rapport.csv` avec le
 détail par titre, et `sockseek-<horodatage>.log` pour le journal brut.
@@ -199,7 +202,8 @@ plusieurs relances concurrentes. Un titre manquant dans deux playlists n'est
 cherché qu'une fois.
 
 Double-clique sur **`lancer.bat`** et choisis « Reprendre les titres
-manquants », ou en ligne de commande :
+manquants » (ou directement sur **`reprendre.bat`**, qui saute droit à ce
+menu), ou en ligne de commande :
 
 ```powershell
 .\Resume-Downloads.ps1 -List      # état des playlists, sans rien relancer
@@ -246,6 +250,18 @@ Côté durée : le serveur bannit 30 minutes si les recherches s'enchaînent tro
 vite, et le limiteur intégré autorise 34 recherches par 220 secondes. Pour 80
 titres, compte une dizaine de minutes au minimum. Ne touche pas à
 `--searches-per-time`.
+
+## Tests
+
+La logique de nettoyage des titres (`Normalize-Text`, `Clean-Title`,
+`Convert-Entry`, dans `SockseekLib.ps1`) est couverte par des tests Pester
+dans `tests/SockseekLib.Tests.ps1` — pratique pour vérifier qu'une regex
+retouchée ne casse pas un cas déjà géré.
+
+```powershell
+Install-Module Pester -Scope CurrentUser -MinimumVersion 5.0   # une fois
+Invoke-Pester .\tests\SockseekLib.Tests.ps1
+```
 
 ## Dépannage
 
