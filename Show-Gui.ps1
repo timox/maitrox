@@ -112,10 +112,24 @@ function Start-KitJob {
     }.GetNewClosure()
 
     $script:activeJob = Start-Job -ScriptBlock {
-        param($Exe, $Path, $Args)
-        & $Exe -NoProfile -File $Path @Args 2>&1 | ForEach-Object { "$_" }
+        # Nom different de $Args : cette variable est reservee/automatique
+        # dans PowerShell et un job Start-Job l'ecrase silencieusement, meme
+        # nommee explicitement en parametre -- constate en reproduisant le
+        # bug (Get-SoulseekList.ps1 recevait 0 argument malgre -ArgumentList).
+        param($Exe, $Path, $ScriptArguments)
+        & $Exe -NoProfile -File $Path @ScriptArguments 2>&1 | ForEach-Object { "$_" }
         [pscustomobject]@{ __ExitCode = $LASTEXITCODE }
     } -ArgumentList $pwshExe, $ScriptPath, $ScriptArgs
+}
+
+# PowerShell 7 ecrit des codes couleur ANSI meme quand la sortie est
+# redirigee (Write-Host -ForegroundColor a travers Start-Job) : sans ce
+# nettoyage, le journal affiche les sequences d'echappement brutes au lieu
+# du texte.
+$script:reAnsi = [regex]::new("`e\[[0-9;]*[a-zA-Z]")
+function Remove-AnsiCodes {
+    param([string] $Text)
+    return $script:reAnsi.Replace($Text, '')
 }
 
 $jobTimer = [System.Windows.Forms.Timer]::new()
@@ -128,7 +142,7 @@ $jobTimer.Add_Tick({
             $script:lastExitCode = $item.__ExitCode
         }
         else {
-            $txtLogSuivi.AppendText(([string]$item) + [Environment]::NewLine)
+            $txtLogSuivi.AppendText((Remove-AnsiCodes ([string]$item)) + [Environment]::NewLine)
         }
     }
 
