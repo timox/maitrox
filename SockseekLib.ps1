@@ -140,6 +140,35 @@ function Convert-Entry {
 
 # ============================================================ ANALYSE ========
 
+# Sockseek 3.x ecrit "state" et "failurereason" comme des codes numeriques
+# d'enum interne (Sockseek.Core.Common.Enums.JobStateOld / JobFailureReason),
+# pas du texte : verifie empiriquement sur sockseek 3.0.5 (--print index-failed
+# donne "NoSearchResults" pendant que _index.csv, lui, ecrit "9"). Les valeurs
+# viennent du code source du projet, pas d'une doc publique susceptible de
+# changer sans prevenir : a revisiter si une future release change les codes.
+$script:SockseekFailureReasonNames = @{
+    0 = 'None'; 1 = 'InvalidSearchString'; 2 = 'OutOfDownloadRetries'
+    4 = 'AllDownloadsFailed'; 5 = 'Other'; 6 = 'ExtractionFailed'
+    7 = 'Cancelled'; 8 = 'ChildJobsFailed'; 9 = 'NoSearchResults'
+    10 = 'NoMatchingResults'
+}
+$script:SockseekFailureReasonCategories = @{
+    2 = 'Probleme reseau ou pair injoignable'   # OutOfDownloadRetries
+    4 = 'Probleme reseau ou pair injoignable'   # AllDownloadsFailed
+    5 = 'Echec (cause non precisee)'            # Other
+    6 = 'Echec (cause non precisee)'            # ExtractionFailed
+    7 = 'Annule'                                # Cancelled
+    8 = 'Echec (cause non precisee)'            # ChildJobsFailed
+    9 = 'Introuvable sur Soulseek'               # NoSearchResults
+    10 = 'Filtre par les conditions'             # NoMatchingResults
+}
+$script:SockseekStateNames = @{
+    0 = 'Pending'; 1 = 'Done'; 2 = 'Failed'; 3 = 'AlreadyExists'; 4 = 'NotFoundLastTime'
+}
+$script:SockseekStateCategories = @{
+    4 = 'Introuvable sur Soulseek'   # NotFoundLastTime : ignore par --skip-not-found
+}
+
 function Find-IndexColumn {
     <# Les noms de colonnes de l'index sockseek ont bouge entre versions.
        On les retrouve par correspondance approximative. #>
@@ -201,8 +230,25 @@ function Get-RunResults {
         $state  = local:Val $row $colState
         $reason = local:Val $row $colReason
 
+        # sockseek 3.x : $state/$reason sont des codes numeriques d'enum (cf. plus haut).
+        # $reasonCode 0 (None) n'est pas exploitable : on retombe sur l'etat.
+        $reasonCode = $null
+        if ($reason -match '^-?\d+$') { $reasonCode = [int]$reason }
+        $stateCode = $null
+        if ($state -match '^-?\d+$') { $stateCode = [int]$state }
+
+        $reasonCategory = if ($reasonCode -and $script:SockseekFailureReasonCategories.ContainsKey($reasonCode)) {
+            $script:SockseekFailureReasonCategories[$reasonCode]
+        } else { $null }
+        $stateCategory = if ($null -ne $stateCode -and $script:SockseekStateCategories.ContainsKey($stateCode)) {
+            $script:SockseekStateCategories[$stateCode]
+        } else { $null }
+
         $category =
             if ($exists) { 'Telecharge' }
+            elseif ($reasonCategory) { $reasonCategory }
+            elseif ($stateCategory) { $stateCategory }
+            # Repli pour un index au format texte (versions anterieures a sockseek 3.x).
             elseif ($reason -match '(?i)not.?found|no.?result|introuv') { 'Introuvable sur Soulseek' }
             elseif ($reason -match '(?i)nosuitable|no.?suitable|condition|filter|quality|bitrate|format') { 'Filtre par les conditions' }
             elseif ($reason -match '(?i)timeout|stale|connect|refus|offline') { 'Probleme reseau ou pair injoignable' }
@@ -212,13 +258,21 @@ function Get-RunResults {
             elseif ($rawPath) { 'Fichier absent du disque' }
             else { 'Non telecharge' }
 
+        # Detail lisible : nom de l'enum plutot que le code numerique brut.
+        $reasonDetail = if ($null -ne $reasonCode -and $script:SockseekFailureReasonNames.ContainsKey($reasonCode)) {
+            $script:SockseekFailureReasonNames[$reasonCode]
+        } else { $reason }
+        $stateDetail = if ($null -ne $stateCode -and $script:SockseekStateNames.ContainsKey($stateCode)) {
+            $script:SockseekStateNames[$stateCode]
+        } else { $state }
+
         $results.Add([pscustomobject]@{
             Artist = local:Val $row $colArtist
             Title  = local:Val $row $colTitle
             Album  = local:Val $row $colAlbum
             Length = local:Val $row $colLength
             Statut = $category
-            Detail = if ($reason) { $reason } else { $state }
+            Detail = if ($reasonDetail -and $reasonDetail -ne 'None') { $reasonDetail } else { $stateDetail }
             Chemin = if ($exists) { $full } else { '' }
             Reussi = [bool]$exists
         })

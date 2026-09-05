@@ -1,7 +1,8 @@
 #Requires -Version 7.0
 <#
-    Tests Pester pour les fonctions de nettoyage de SockseekLib.ps1
-    (Normalize-Text, Clean-Title, Convert-Entry).
+    Tests Pester pour les fonctions de SockseekLib.ps1 : nettoyage
+    (Normalize-Text, Clean-Title, Convert-Entry) et analyse des resultats
+    de run (Get-RunResults).
 
     Lancement :
         Invoke-Pester .\tests\SockseekLib.Tests.ps1
@@ -151,5 +152,86 @@ Describe 'Convert-Entry' {
     It 'convertit la duree en secondes entieres' {
         $entry = New-Entry -Artist 'A' -Uploader 'U' -Track 'T' -Title 'A - T' -Duration 245.7
         (Convert-Entry $entry).Length | Should -Be 245
+    }
+}
+
+Describe 'Get-RunResults' {
+    <#
+    sockseek 3.x ecrit "state" et "failurereason" dans _index.csv comme des
+    codes numeriques d'enum (JobStateOld / JobFailureReason cote sockseek),
+    pas du texte. Verifie avec le vrai binaire sockseek 3.0.5 (--mock-files-dir) :
+    un titre introuvable donne "state=2,failurereason=9", et --print index-failed
+    confirme que 9 = NoSearchResults. Ces tests figent ce format pour eviter que
+    la classification retombe silencieusement sur "Non telecharge" pour tout.
+    #>
+
+    BeforeAll {
+        $script:testDir = Join-Path ([IO.Path]::GetTempPath()) "sockseek-test-$([guid]::NewGuid().Guid.Substring(0,8))"
+        New-Item -ItemType Directory -Path $testDir -Force | Out-Null
+    }
+
+    AfterAll {
+        Remove-Item -LiteralPath $testDir -Recurse -Force -ErrorAction SilentlyContinue
+    }
+
+    It 'categorise NoSearchResults (9) comme Introuvable sur Soulseek' {
+        $idx = Join-Path $testDir 'idx1.csv'
+        @'
+filepath,artist,album,title,length,tracktype,state,failurereason
+,K-H1,,Krasnota,340,0,2,9
+'@ | Set-Content -LiteralPath $idx -Encoding utf8NoBOM
+
+        $results = Get-RunResults -IndexPath $idx -OutputDir $testDir
+        $results[0].Statut | Should -Be 'Introuvable sur Soulseek'
+        $results[0].Detail | Should -Be 'NoSearchResults'
+        $results[0].Reussi | Should -BeFalse
+    }
+
+    It 'categorise NoMatchingResults (10) comme Filtre par les conditions' {
+        $idx = Join-Path $testDir 'idx2.csv'
+        @'
+filepath,artist,album,title,length,tracktype,state,failurereason
+,Artist,,Title,300,0,2,10
+'@ | Set-Content -LiteralPath $idx -Encoding utf8NoBOM
+
+        (Get-RunResults -IndexPath $idx -OutputDir $testDir)[0].Statut | Should -Be 'Filtre par les conditions'
+    }
+
+    It 'categorise Cancelled (7) comme Annule' {
+        $idx = Join-Path $testDir 'idx3.csv'
+        @'
+filepath,artist,album,title,length,tracktype,state,failurereason
+,Artist,,Title,300,0,2,7
+'@ | Set-Content -LiteralPath $idx -Encoding utf8NoBOM
+
+        (Get-RunResults -IndexPath $idx -OutputDir $testDir)[0].Statut | Should -Be 'Annule'
+    }
+
+    It 'un fichier present sur le disque est reussi meme sans filepath renseigne au bon format' {
+        $sub = Join-Path $testDir 'sub'
+        New-Item -ItemType Directory -Path $sub -Force | Out-Null
+        New-Item -ItemType File -Path (Join-Path $sub 'Artist - Title.mp3') -Force | Out-Null
+
+        $idx = Join-Path $testDir 'idx4.csv'
+        @'
+filepath,artist,album,title,length,tracktype,state,failurereason
+sub/Artist - Title.mp3,Artist,,Title,300,0,1,0
+'@ | Set-Content -LiteralPath $idx -Encoding utf8NoBOM
+
+        $result = Get-RunResults -IndexPath $idx -OutputDir $testDir
+        $result[0].Statut | Should -Be 'Telecharge'
+        $result[0].Reussi | Should -BeTrue
+    }
+
+    It "la verite vient du disque : un index optimiste sans fichier reel est un echec" {
+        $idx = Join-Path $testDir 'idx5.csv'
+        @'
+filepath,artist,album,title,length,tracktype,state,failurereason
+manquant/Artist - Title.mp3,Artist,,Title,300,0,1,0
+'@ | Set-Content -LiteralPath $idx -Encoding utf8NoBOM
+
+        $result = Get-RunResults -IndexPath $idx -OutputDir $testDir
+        $result[0].Reussi | Should -BeFalse
+        $result[0].Statut | Should -Be 'Fichier absent du disque'
     }
 }
