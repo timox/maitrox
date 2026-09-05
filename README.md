@@ -225,7 +225,12 @@ vaut mieux que plusieurs relances concurrentes.
 
 Double-clique sur **`lancer.bat`** et choisis « Reprendre les titres
 manquants » (ou directement sur **`reprendre.bat`**, qui saute droit à ce
-menu), ou en ligne de commande :
+menu). Le menu de reprise affiche d'abord l'état actuel, puis propose de
+voir la liste avant de relancer, de tout reprendre, ou de ne reprendre
+qu'une playlist en particulier (la seule granularité disponible : le script
+filtre par playlist, pas titre par titre) — avec, à chaque étape, un retour
+possible au menu de reprise ou au menu principal plutôt qu'une sortie
+immédiate. En ligne de commande :
 
 ```powershell
 .\Resume-Downloads.ps1 -List      # état des playlists, sans rien relancer
