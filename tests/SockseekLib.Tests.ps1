@@ -335,3 +335,84 @@ length-tol = 5
         ($content | Where-Object { $_ -match '^username' }).Count | Should -Be 1
     }
 }
+
+Describe 'Import-PlaylistFolder' {
+    <#
+    Rend gerable un dossier de telechargement jamais enregistre dans le
+    catalogue (deplace a la main, telecharge avant l'introduction du
+    catalogue centralise, etc.) sans jamais relancer d'extraction.
+    #>
+    BeforeAll {
+        $script:catTestDir = Join-Path ([IO.Path]::GetTempPath()) "sockseek-import-$([guid]::NewGuid().Guid.Substring(0,8))"
+        New-Item -ItemType Directory -Path $catTestDir -Force | Out-Null
+        $script:savedAppData2 = $env:APPDATA
+        $env:APPDATA = $catTestDir
+    }
+
+    AfterAll {
+        $env:APPDATA = $savedAppData2
+        Remove-Item -LiteralPath $catTestDir -Recurse -Force -ErrorAction SilentlyContinue
+    }
+
+    It "leve une erreur si le dossier n'existe pas" {
+        { Import-PlaylistFolder -FolderPath (Join-Path $catTestDir 'inexistant') } | Should -Throw
+    }
+
+    It "leve une erreur si le dossier ne contient ni index ni fichier audio" {
+        $empty = Join-Path $catTestDir 'vide'
+        New-Item -ItemType Directory -Path $empty -Force | Out-Null
+        { Import-PlaylistFolder -FolderPath $empty } | Should -Throw
+    }
+
+    It 'enregistre un dossier avec _index.csv dans le catalogue, avec le bon compte' {
+        $folder = Join-Path $catTestDir 'Ma Playlist'
+        New-Item -ItemType Directory -Path $folder -Force | Out-Null
+        New-Item -ItemType File -Path (Join-Path $folder 'Artist - Ok.mp3') -Force | Out-Null
+        @'
+filepath,artist,album,title,length,tracktype,state,failurereason
+Artist - Ok.mp3,Artist,,Ok,300,0,1,0
+,Artist,,Manquant,300,0,2,9
+'@ | Set-Content -LiteralPath (Join-Path $folder '_index.csv') -Encoding utf8NoBOM
+
+        $imported = Import-PlaylistFolder -FolderPath $folder
+        $imported.Total | Should -Be 2
+        $imported.Ok | Should -Be 1
+        $imported.Manquants | Should -Be 1
+        $imported.Name | Should -Be 'Ma Playlist'
+
+        $entry = Read-Catalogue | Where-Object { $_.Name -eq 'Ma Playlist' }
+        $entry | Should -Not -BeNullOrEmpty
+        $entry.Total | Should -Be 2
+        $entry.Ok | Should -Be 1
+    }
+
+    It 'reimporter le meme dossier met a jour l entree plutot que d en creer une seconde' {
+        $folder = Join-Path $catTestDir 'Ma Playlist'
+        Import-PlaylistFolder -FolderPath $folder | Out-Null
+        $before = @(Read-Catalogue).Count
+
+        Import-PlaylistFolder -FolderPath $folder | Out-Null
+        $after = @(Read-Catalogue).Count
+
+        $after | Should -Be $before
+    }
+
+    It 'detecte aussi un dossier sans index mais avec des fichiers audio (balayage du disque)' {
+        $folder = Join-Path $catTestDir 'Sans Index'
+        New-Item -ItemType Directory -Path $folder -Force | Out-Null
+        New-Item -ItemType File -Path (Join-Path $folder 'Un Titre.flac') -Force | Out-Null
+
+        $imported = Import-PlaylistFolder -FolderPath $folder
+        $imported.Total | Should -Be 1
+        $imported.Ok | Should -Be 1
+    }
+
+    It 'utilise le nom fourni plutot que le nom du dossier' {
+        $folder = Join-Path $catTestDir 'Nom Personnalise'
+        New-Item -ItemType Directory -Path $folder -Force | Out-Null
+        New-Item -ItemType File -Path (Join-Path $folder 'Un Titre.flac') -Force | Out-Null
+
+        $imported = Import-PlaylistFolder -FolderPath $folder -Name 'Nom choisi'
+        $imported.Name | Should -Be 'Nom choisi'
+    }
+}

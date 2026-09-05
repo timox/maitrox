@@ -761,6 +761,49 @@ $btnConfSaveDest.Add_Click({
         'Kit sockseek', 'OK', 'Information') | Out-Null
 })
 
+# --- import d'un dossier de telechargement existant -----------------------
+$grpImport = [System.Windows.Forms.GroupBox]::new()
+$grpImport.Text = 'Importer un dossier de telechargement existant'
+$grpImport.Width = 700
+$grpImport.Height = 90
+
+$lblImportHelp = [System.Windows.Forms.Label]::new()
+$lblImportHelp.Location = [System.Drawing.Point]::new(10, 22)
+$lblImportHelp.Size = [System.Drawing.Size]::new(670, 32)
+$lblImportHelp.Text = "Un dossier de telechargement deja present sur le disque (deplace a la " +
+                       "main, ou telecharge avant l'existence du catalogue) mais absent de " +
+                       "l'onglet Playlists : cherche son index et l'enregistre, sans rien retelecharger."
+
+$btnImportFolder = [System.Windows.Forms.Button]::new()
+$btnImportFolder.Text = 'Importer un dossier...'
+$btnImportFolder.AutoSize = $true
+$btnImportFolder.Location = [System.Drawing.Point]::new(10, 58)
+
+$grpImport.Controls.AddRange(@($lblImportHelp, $btnImportFolder))
+[void]$topConfig.Controls.Add($grpImport, 0, 3)
+$topConfig.SetColumnSpan($grpImport, 3)
+
+$btnImportFolder.Add_Click({
+    $dlg = [System.Windows.Forms.FolderBrowserDialog]::new()
+    $dlg.Description = 'Dossier de telechargement a importer dans le catalogue'
+    if ($dlg.ShowDialog() -ne [System.Windows.Forms.DialogResult]::OK) { return }
+
+    try {
+        $imported = Import-PlaylistFolder -FolderPath $dlg.SelectedPath
+        Update-StateGrid $dgvPlaylists
+        [System.Windows.Forms.MessageBox]::Show(
+            "Playlist '$($imported.Name)' importee : $($imported.Ok) recuperes, " +
+            "$($imported.Manquants) manquants sur $($imported.Total) au total.`n`n" +
+            "Elle apparait maintenant dans l'onglet Playlists (reprise possible normalement).",
+            'Kit sockseek', 'OK', 'Information') | Out-Null
+    }
+    catch {
+        [System.Windows.Forms.MessageBox]::Show(
+            "Echec de l'import : $($_.Exception.Message)",
+            'Kit sockseek', 'OK', 'Error') | Out-Null
+    }
+})
+
 # ------------------------------------------------------- onglet playlists =
 $tabPlaylists = [System.Windows.Forms.TabPage]::new('Playlists')
 $tabs.TabPages.Add($tabPlaylists)
@@ -1011,7 +1054,7 @@ $tabSuivi.Controls.Add($barSuivi)
 
 # ------------------------------------------------------- boutons a verrouiller
 $script:busyControls.AddRange(@(
-    $btnStart, $btnInstall, $btnCheckUpdates,
+    $btnStart, $btnInstall, $btnCheckUpdates, $btnImportFolder,
     $btnRefreshPlaylists, $btnResumeAll, $btnTestSelected, $btnResumeSelected
 ))
 
