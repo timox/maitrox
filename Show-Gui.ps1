@@ -164,9 +164,18 @@ function Get-StateRows {
 }
 
 function Update-StateGrid {
+    <# $txtPlaylistSearch n'existe pas encore au moment ou cette fonction est
+       definie (elle est construite plus loin dans le script), mais existera
+       deja a chaque appel reel : la recherche de variable se fait a
+       l'execution, pas a la definition. #>
     param([Parameter(Mandatory)] [System.Windows.Forms.DataGridView] $Grid)
+    $rows = Get-StateRows
+    $filter = if ($txtPlaylistSearch) { $txtPlaylistSearch.Text.Trim() } else { '' }
+    if ($filter) {
+        $rows = , @($rows | Where-Object { $_.Playlist -like "*$filter*" })
+    }
     $Grid.DataSource = $null
-    $Grid.DataSource = Get-StateRows
+    $Grid.DataSource = $rows
 }
 
 # =================================================================== UI ===
@@ -511,11 +520,32 @@ $btnResumeSelected.Margin = [System.Windows.Forms.Padding]::new(3, 10, 3, 3)
 
 $barPlaylists.Controls.AddRange(@($btnRefreshPlaylists, $btnResumeAll, $btnTestSelected, $btnResumeSelected))
 
+$barSearch = [System.Windows.Forms.FlowLayoutPanel]::new()
+$barSearch.Dock = 'Top'
+$barSearch.AutoSize = $true
+$barSearch.Height = 34
+
+$lblSearch = [System.Windows.Forms.Label]::new()
+$lblSearch.Text = 'Rechercher :'
+$lblSearch.AutoSize = $true
+$lblSearch.Margin = [System.Windows.Forms.Padding]::new(6, 9, 3, 3)
+
+$txtPlaylistSearch = [System.Windows.Forms.TextBox]::new()
+$txtPlaylistSearch.Width = 250
+$txtPlaylistSearch.Margin = [System.Windows.Forms.Padding]::new(3, 6, 3, 3)
+
+$barSearch.Controls.AddRange(@($lblSearch, $txtPlaylistSearch))
+
 $panelPlaylistsTop = [System.Windows.Forms.Panel]::new()
 $panelPlaylistsTop.Dock = 'Fill'
 $panelPlaylistsTop.Controls.Add($dgvPlaylists)
+$panelPlaylistsTop.Controls.Add($barSearch)
 $panelPlaylistsTop.Controls.Add($barPlaylists)
 $splitPl.Panel1.Controls.Add($panelPlaylistsTop)
+
+$txtPlaylistSearch.Add_TextChanged({
+    Update-StateGrid $dgvPlaylists
+})
 
 # --- panneau du bas : detail de la playlist selectionnee ------------------
 $panelDetail = [System.Windows.Forms.Panel]::new()
