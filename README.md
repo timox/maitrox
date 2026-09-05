@@ -9,8 +9,9 @@ obtenus avec un rapport détaillé de ce qui a échoué et pourquoi.
 | Fichier | Rôle |
 |---|---|
 | `installer.bat` | **Double-clic : installe tout** |
-| `lancer.bat` | **Double-clic : nouvelle playlist, reprise, ou état** |
+| `lancer.bat` | **Double-clic : nouvelle playlist, reprise, ou état** — trouve `pwsh` et lance `Menu.ps1` |
 | `reprendre.bat` | Double-clic : va direct au menu de reprise, sans passer par celui de `lancer.bat` |
+| `Menu.ps1` | Le menu interactif lui-même ; tout le cheminement (retours, sortie) y vit |
 | `Install-Sockseek.ps1` | Télécharge les binaires, crée la configuration, règle le PATH |
 | `Get-SoulseekList.ps1` | Extraction, nettoyage, téléchargement, rapport |
 | `Build-Playlist.ps1` | Rapport et playlist seuls, réutilisable après un run manuel |
