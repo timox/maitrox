@@ -106,7 +106,11 @@ if (-not (Get-Command yt-dlp -ErrorAction SilentlyContinue)) {
 
 Write-Host "Recuperation des metadonnees (une requete par piste, patience)..." -ForegroundColor Cyan
 
-$ytDlpArgs = @('--skip-download', '--ignore-errors', '-J')
+# --sleep-requests : SoundCloud limite a ~600 requetes / 10 min (1/s). Sans
+# ce throttle proactif, une playlist un peu longue declenche des 429 en
+# rafale, chacun retente 3 fois par defaut -- beaucoup plus lent au final
+# qu'espacer les requetes des le depart.
+$ytDlpArgs = @('--skip-download', '--ignore-errors', '--sleep-requests', '1', '-J')
 if ($CookiesFromBrowser) {
     $ytDlpArgs += @('--cookies-from-browser', $CookiesFromBrowser)
 }
@@ -338,7 +342,29 @@ if ($PrintOnly) {
 }
 
 if ($code -ne 0) {
-    Write-Warning "sockseek s'est termine avec le code $code. Journal : $logPath"
+    # Cherche une cause connue dans le journal plutot que de laisser
+    # l'utilisateur deviner depuis un simple code de sortie -- l'echec le
+    # plus frequent (mauvais pseudo/mot de passe) n'a sinon aucun signal
+    # visible en dehors du journal detaille.
+    $logContent = if (Test-Path -LiteralPath $logPath) {
+        Get-Content -LiteralPath $logPath -Raw -ErrorAction SilentlyContinue
+    } else { $null }
+
+    if ($logContent -match 'INVALIDPASS') {
+        Write-Warning @"
+Identifiants Soulseek refuses (INVALIDPASS).
+Cause la plus frequente : ce pseudo est deja pris par quelqu'un d'autre --
+Soulseek ne cree un compte que si le pseudo est libre, sinon ton mot de
+passe ne correspondra jamais au sien. Choisis un pseudo moins courant.
+Sinon, verifie le mot de passe dans sockseek.conf.
+"@
+    }
+    elseif ($logContent -match '(?i)login failed') {
+        Write-Warning "Connexion a Soulseek echouee. Voir le journal pour le detail : $logPath"
+    }
+    else {
+        Write-Warning "sockseek s'est termine avec le code $code. Journal : $logPath"
+    }
 }
 
 # ---------------------------------------------------- rapport et playlist ---
