@@ -235,3 +235,51 @@ manquant/Artist - Title.mp3,Artist,,Title,300,0,1,0
         $result[0].Statut | Should -Be 'Fichier absent du disque'
     }
 }
+
+Describe 'ConvertTo-SafeFolderName' {
+    It 'laisse un nom de playlist simple inchange' {
+        ConvertTo-SafeFolderName 'Sans retour - Phoen V' | Should -Be 'Sans retour - Phoen V'
+    }
+
+    It 'retire les caracteres invalides pour un nom de dossier' {
+        ConvertTo-SafeFolderName 'Techno: Vol. 1 / 2 <mix>' | Should -Not -Match '[:/\\<>]'
+    }
+
+    It "retombe sur 'playlist' pour un nom vide" {
+        ConvertTo-SafeFolderName '' | Should -Be 'playlist'
+        ConvertTo-SafeFolderName $null | Should -Be 'playlist'
+    }
+}
+
+Describe 'Get-DefaultOutputDir / Set-DefaultOutputDir' {
+    <#
+    Isole des vraies preferences de l'utilisateur : redirige APPDATA (ou
+    ~/.config sur Unix) vers un dossier jetable le temps du test.
+    #>
+    BeforeAll {
+        $script:prefsTestDir = Join-Path ([IO.Path]::GetTempPath()) "sockseek-prefs-$([guid]::NewGuid().Guid.Substring(0,8))"
+        New-Item -ItemType Directory -Path $prefsTestDir -Force | Out-Null
+        $script:savedAppData = $env:APPDATA
+        $env:APPDATA = $prefsTestDir
+    }
+
+    AfterAll {
+        $env:APPDATA = $savedAppData
+        Remove-Item -LiteralPath $prefsTestDir -Recurse -Force -ErrorAction SilentlyContinue
+    }
+
+    It "renvoie le dossier d'origine du kit quand rien n'est enregistre" {
+        Get-DefaultOutputDir | Should -Be (Join-Path $HOME 'Music' 'sockseek')
+    }
+
+    It 'persiste un nouveau dossier par defaut' {
+        Set-DefaultOutputDir -OutputDir 'D:\Music\techno'
+        Get-DefaultOutputDir | Should -Be 'D:\Music\techno'
+    }
+
+    It 'la valeur persistee survit a un nouvel appel (relit le fichier, pas un cache memoire)' {
+        Set-DefaultOutputDir -OutputDir 'D:\Ailleurs'
+        Get-DefaultOutputDir | Should -Be 'D:\Ailleurs'
+        Get-DefaultOutputDir | Should -Be 'D:\Ailleurs'
+    }
+}

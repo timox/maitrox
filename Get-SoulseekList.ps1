@@ -59,7 +59,7 @@ param(
     [switch] $Download,
     [string] $SockseekPath,
     [pscredential] $Credential,
-    [string] $OutputDir = (Join-Path $HOME "Music" "sockseek"),
+    [string] $OutputDir,
     [switch] $PrintOnly
 )
 
@@ -69,6 +69,16 @@ $ErrorActionPreference = 'Stop'
 # Regex de nettoyage et fonctions Normalize-Text / Clean-Title / Convert-Entry :
 # voir SockseekLib.ps1, testees independamment dans tests/SockseekLib.Tests.ps1.
 . (Join-Path $PSScriptRoot 'SockseekLib.ps1')
+
+if ($PSBoundParameters.ContainsKey('OutputDir') -and $OutputDir) {
+    # -OutputDir explicite : devient le nouveau dossier par defaut pour les
+    # prochains lancements (lancer.bat s'appuie la-dessus pour le rendre
+    # modifiable depuis son menu).
+    Set-DefaultOutputDir -OutputDir $OutputDir
+}
+else {
+    $OutputDir = Get-DefaultOutputDir
+}
 
 # ------------------------------------------------------------- extraction ---
 if (-not (Get-Command yt-dlp -ErrorAction SilentlyContinue)) {
@@ -88,6 +98,13 @@ $entries = @($data.entries | Where-Object { $_ })
 if ($entries.Count -eq 0) {
     throw "Aucune piste trouvee dans la playlist."
 }
+
+# Chaque playlist telecharge dans son propre sous-dossier, nomme d'apres son
+# titre, a l'interieur du dossier de destination : deux sets ne se melangent
+# jamais sur le disque.
+$playlistName   = if ($data.title) { $data.title } else { ($Url.TrimEnd('/') -split '/' | Select-Object -Last 1) }
+$playlistFolder = ConvertTo-SafeFolderName $playlistName
+$destDir        = Join-Path $OutputDir $playlistFolder
 
 Write-Host "$($entries.Count) pistes recuperees." -ForegroundColor Cyan
 
@@ -257,9 +274,9 @@ Sinon, en depannage : -Credential (Get-Credential)
     exit 3
 }
 
-$idxPath = Join-Path $OutputDir '_index.csv'
-$logPath = Join-Path $OutputDir ("sockseek-{0}.log" -f (Get-Date -Format 'yyyyMMdd-HHmmss'))
-New-Item -ItemType Directory -Path $OutputDir -Force | Out-Null
+$idxPath = Join-Path $destDir '_index.csv'
+$logPath = Join-Path $destDir ("sockseek-{0}.log" -f (Get-Date -Format 'yyyyMMdd-HHmmss'))
+New-Item -ItemType Directory -Path $destDir -Force | Out-Null
 
 $sockArgs = @(
     $Out
@@ -271,7 +288,7 @@ $sockArgs = @(
     '--pref-format', 'flac,wav'
     '--remove-ft'
     '--name-format', '{artist( - )title|filename}'
-    '--output-dir', $OutputDir
+    '--output-dir', $destDir
 )
 
 if ($PrintOnly) {
@@ -281,7 +298,7 @@ if ($PrintOnly) {
 }
 else {
     Write-Host ""
-    Write-Host "Telechargement vers $OutputDir" -ForegroundColor Cyan
+    Write-Host "Telechargement vers $destDir" -ForegroundColor Cyan
     Write-Host "Compte environ $([math]::Ceiling($rows.Count / 34.0) * 220 / 60) minutes minimum : le serveur Soulseek"
     Write-Host "bannit 30 minutes si les recherches s'enchainent trop vite." -ForegroundColor DarkGray
 }
@@ -302,7 +319,7 @@ if ($code -ne 0) {
 # ---------------------------------------------------- rapport et playlist ---
 $builder = Join-Path (Split-Path -Parent $PSCommandPath) 'Build-Playlist.ps1'
 if (Test-Path -LiteralPath $builder) {
-    & $builder -OutputDir $OutputDir -IndexPath $idxPath -SourceCsv $Out -Register $Url
+    & $builder -OutputDir $destDir -IndexPath $idxPath -SourceCsv $Out -Register $Url
 }
 else {
     Write-Warning "Build-Playlist.ps1 absent : ni rapport ni playlist generes."

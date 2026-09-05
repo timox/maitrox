@@ -103,6 +103,13 @@ playlist ». Il demande l'URL, puis propose trois modes : tester sans rien tél�
 pour de vrai, ou seulement extraire et nettoyer la liste. Il accepte aussi une
 URL en argument, ce qui permet d'en faire un raccourci.
 
+Pour les deux premiers modes, il rappelle le **dossier de destination actuel**
+et permet de le remplacer : laisse le champ vide pour le conserver, ou tape un
+nouveau chemin pour en faire le nouveau défaut — il est alors mémorisé et
+réutilisé automatiquement à chaque lancement suivant, y compris sans repasser
+par le menu (`%APPDATA%\sockseek\prefs.json`). À l'installation, le dossier
+choisi via `-MusicDir` devient ce défaut initial.
+
 En ligne de commande, extraction et nettoyage seuls, pour inspecter le CSV avant d'engager quoi que
 ce soit :
 
@@ -122,6 +129,10 @@ Pour de vrai :
 .\Get-SoulseekList.ps1 -Url $url -Download -OutputDir "D:\Music\techno"
 ```
 
+Passer `-OutputDir` explicitement, comme ci-dessus, met aussi a jour le
+defaut retenu pour les prochains lancements — c'est ce que fait `lancer.bat`
+quand tu tapes un nouveau chemin dans son menu.
+
 ### Paramètres
 
 | Paramètre | Effet |
@@ -131,9 +142,20 @@ Pour de vrai :
 | `-RawOut` | Écrit aussi le CSV brut, pour comparer |
 | `-Download` | Enchaîne sur sockseek |
 | `-PrintOnly` | Avec `-Download` : recherche seule |
-| `-OutputDir` | Dossier de téléchargement |
+| `-OutputDir` | Dossier de destination ; omis, reprend le défaut retenu (voir plus haut). Passé explicitement, devient le nouveau défaut |
 | `-SockseekPath` | Chemin du binaire si absent du PATH |
 | `-Credential` | Identifiants explicites, en dépannage |
+
+### Un sous-dossier par playlist
+
+Chaque playlist télécharge dans son propre sous-dossier, nommé d'après son
+titre (nettoyé des caractères invalides pour un chemin Windows), à
+l'intérieur du dossier de destination ci-dessus. Deux sets ne se mélangent
+jamais sur le disque : `D:\Music\techno\Sans retour - Phoen V\`,
+`D:\Music\techno\Deep House Essentials\`, etc. — chacun avec son propre
+`rapport.csv`, `playlist.m3u` et journal. `-OutputDir` (ou le défaut retenu)
+désigne donc le dossier **parent** commun à toutes les playlists, pas le
+dossier final.
 
 ## Ce qui est nettoyé
 
@@ -193,13 +215,13 @@ récupère régulièrement quelques titres de plus, sans changer un seul réglag
 
 Chaque run avec `-Download` inscrit la playlist dans un catalogue
 (`%APPDATA%\sockseek\catalogue.json`). La reprise le relit, recalcule ce qui
-manque pour chacune, fusionne le tout en une liste dédoublonnée et relance
-sockseek — une passe par dossier de destination, pas une par playlist.
+manque pour chacune, regroupe par dossier de destination et relance sockseek
+un flux a la fois (chaque playlist ayant son propre sous-dossier, ça revient
+en general a une passe par playlist).
 
 Ce regroupement n'est pas cosmétique. Le serveur bannit 30 minutes si les
-recherches s'enchaînent trop vite : un flux unique et régulier vaut mieux que
-plusieurs relances concurrentes. Un titre manquant dans deux playlists n'est
-cherché qu'une fois.
+recherches s'enchaînent trop vite : un flux unique et régulier par dossier
+vaut mieux que plusieurs relances concurrentes.
 
 Double-clique sur **`lancer.bat`** et choisis « Reprendre les titres
 manquants » (ou directement sur **`reprendre.bat`**, qui saute droit à ce

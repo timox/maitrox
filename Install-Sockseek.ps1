@@ -52,6 +52,8 @@ param(
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
 
+. (Join-Path $PSScriptRoot 'SockseekLib.ps1')
+
 function Write-Step { param([string]$m) Write-Host "`n>> $m" -ForegroundColor Cyan }
 function Write-Ok   { param([string]$m) Write-Host "   $m" -ForegroundColor Green }
 function Write-Info { param([string]$m) Write-Host "   $m" -ForegroundColor DarkGray }
@@ -269,6 +271,8 @@ pref-format = flac,mp3
 # quelques secondes de la duree annoncee par la source.
 length-tol = 10
 "@ | Set-Content -Path $confFile -Encoding utf8NoBOM
+
+    Set-DefaultOutputDir -OutputDir $MusicDir
 
     Write-Ok "Ecrit : $confFile"
     Write-Info "Musique : $MusicDir"
