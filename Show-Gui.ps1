@@ -200,6 +200,12 @@ $form.Height       = 700
 $form.StartPosition = 'CenterScreen'
 $form.MinimumSize  = [System.Drawing.Size]::new(750, 550)
 
+$iconPath = Join-Path $PSScriptRoot 'icon.ico'
+if (Test-Path -LiteralPath $iconPath) {
+    try { $form.Icon = [System.Drawing.Icon]::new($iconPath) }
+    catch { } # icone facultative : ne bloque jamais le lancement de la fenetre
+}
+
 $tabs = [System.Windows.Forms.TabControl]::new()
 $tabs.Dock = 'Fill'
 $form.Controls.Add($tabs)

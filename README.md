@@ -13,6 +13,7 @@ obtenus avec un rapport détaillé de ce qui a échoué et pourquoi.
 | `lancer.bat` | Double-clic : menu console (nouvelle playlist, reprise, état) — trouve `pwsh` et lance `Menu.ps1` |
 | `reprendre.bat` | Double-clic : va direct au menu de reprise console, sans passer par celui de `lancer.bat` |
 | `Show-Gui.ps1` | L'interface graphique elle-même (Windows Forms) |
+| `icon.ico` | Icône de la fenêtre de `Show-Gui.ps1` |
 | `Menu.ps1` | Le menu interactif console ; tout le cheminement (retours, sortie) y vit |
 | `Install-Sockseek.ps1` | Télécharge les binaires, crée la configuration, règle le PATH |
 | `Get-SoulseekList.ps1` | Extraction, nettoyage, téléchargement, rapport |
