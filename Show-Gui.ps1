@@ -160,18 +160,47 @@ $jobTimer.Add_Tick({
 })
 
 # ============================================================== catalogue =
+function Write-InterfaceError {
+    <# Rend une erreur visible dans le journal au lieu de la laisser
+       silencieuse ou de planter tout l'appelant. $txtLogSuivi peut ne pas
+       encore exister au tout premier appel (avant que l'UI soit construite) :
+       verifie avant d'ecrire. #>
+    param([string] $Message)
+    if ($txtLogSuivi) {
+        $txtLogSuivi.AppendText("[erreur interface] $Message" + [Environment]::NewLine)
+    }
+}
+
 function Get-StateRows {
+    <# Une entree de catalogue en erreur (chemin avec caractere special,
+       fichier _index.csv verrouille par un run encore actif, etc.) ne doit
+       jamais faire disparaitre TOUTES les autres -- constate en pratique :
+       une exception ici, avec $ErrorActionPreference = 'Stop', viderait
+       toute la grille de la fenetre Playlists sans aucun message. #>
     $rows = foreach ($e in @(Read-Catalogue)) {
-        $pending = @(Get-PlaylistPending -Entry $e)
-        $done = [int]$e.Total - $pending.Count
-        if ($done -lt 0) { $done = [int]$e.Ok }
-        [pscustomobject]@{
-            Playlist        = $e.Name
-            Manquants       = $pending.Count
-            'Recuperes'     = $done
-            Runs            = $e.RunCount
-            'Dernier essai' = if ($e.LastRun) { ([datetime]$e.LastRun).ToString('yyyy-MM-dd HH:mm') } else { '' }
-            Dossier         = $e.OutputDir
+        try {
+            $pending = @(Get-PlaylistPending -Entry $e)
+            $done = [int]$e.Total - $pending.Count
+            if ($done -lt 0) { $done = [int]$e.Ok }
+            [pscustomobject]@{
+                Playlist        = $e.Name
+                Manquants       = $pending.Count
+                'Recuperes'     = $done
+                Runs            = $e.RunCount
+                'Dernier essai' = if ($e.LastRun) { ([datetime]$e.LastRun).ToString('yyyy-MM-dd HH:mm') } else { '' }
+                Dossier         = $e.OutputDir
+            }
+        }
+        catch {
+            Write-InterfaceError "Impossible de lire l'etat de '$($e.Name)' : $($_.Exception.Message)"
+            [pscustomobject]@{
+                Playlist        = "$($e.Name) (erreur de lecture)"
+                Manquants       = '?'
+                'Recuperes'     = '?'
+                Runs            = $e.RunCount
+                'Dernier essai' = if ($e.LastRun) { ([datetime]$e.LastRun).ToString('yyyy-MM-dd HH:mm') } else { '' }
+                Dossier         = $e.OutputDir
+            }
         }
     }
     return , @($rows)
@@ -183,13 +212,18 @@ function Update-StateGrid {
        deja a chaque appel reel : la recherche de variable se fait a
        l'execution, pas a la definition. #>
     param([Parameter(Mandatory)] [System.Windows.Forms.DataGridView] $Grid)
-    $rows = Get-StateRows
-    $filter = if ($txtPlaylistSearch) { $txtPlaylistSearch.Text.Trim() } else { '' }
-    if ($filter) {
-        $rows = , @($rows | Where-Object { $_.Playlist -like "*$filter*" })
+    try {
+        $rows = Get-StateRows
+        $filter = if ($txtPlaylistSearch) { $txtPlaylistSearch.Text.Trim() } else { '' }
+        if ($filter) {
+            $rows = , @($rows | Where-Object { $_.Playlist -like "*$filter*" })
+        }
+        $Grid.DataSource = $null
+        $Grid.DataSource = $rows
     }
-    $Grid.DataSource = $null
-    $Grid.DataSource = $rows
+    catch {
+        Write-InterfaceError "Impossible d'actualiser la liste des playlists : $($_.Exception.Message)"
+    }
 }
 
 # =================================================================== UI ===
@@ -199,6 +233,12 @@ $form.Width        = 950
 $form.Height       = 700
 $form.StartPosition = 'CenterScreen'
 $form.MinimumSize  = [System.Drawing.Size]::new(750, 550)
+
+$iconPath = Join-Path $PSScriptRoot 'icon.ico'
+if (Test-Path -LiteralPath $iconPath) {
+    try { $form.Icon = [System.Drawing.Icon]::new($iconPath) }
+    catch { } # icone facultative : ne bloque jamais le lancement de la fenetre
+}
 
 $tabs = [System.Windows.Forms.TabControl]::new()
 $tabs.Dock = 'Fill'
@@ -420,33 +460,38 @@ function Update-BinaryStatus {
        inattendu. #>
     param([switch] $CheckUpdates)
 
-    $sockPath = Test-KitBinary -Names @('sockseek', 'sldl')
-    $ytPath   = Test-KitBinary -Names @('yt-dlp')
+    try {
+        $sockPath = Test-KitBinary -Names @('sockseek', 'sldl')
+        $ytPath   = Test-KitBinary -Names @('yt-dlp')
 
-    $sockVersion = Get-InstalledVersion -ExePath $sockPath
-    $ytVersion   = Get-InstalledVersion -ExePath $ytPath
+        $sockVersion = Get-InstalledVersion -ExePath $sockPath
+        $ytVersion   = Get-InstalledVersion -ExePath $ytPath
 
-    $sockLine = if ($sockPath) { "sockseek : trouve, version $sockVersion ($sockPath)" }
-                else { 'sockseek : introuvable' }
-    $ytLine   = if ($ytPath) { "yt-dlp : trouve, version $ytVersion ($ytPath)" }
-                else { 'yt-dlp : introuvable' }
+        $sockLine = if ($sockPath) { "sockseek : trouve, version $sockVersion ($sockPath)" }
+                    else { 'sockseek : introuvable' }
+        $ytLine   = if ($ytPath) { "yt-dlp : trouve, version $ytVersion ($ytPath)" }
+                    else { 'yt-dlp : introuvable' }
 
-    if ($CheckUpdates) {
-        if ($sockPath) {
-            $latest = Get-LatestReleaseTag -Repo 'fiso64/sockseek'
-            $sockLine += if (-not $latest) { ' -- verification impossible (reseau/quota GitHub)' }
-                         elseif ($sockVersion -and $latest.TrimStart('v') -ne $sockVersion) { " -- mise a jour disponible : $latest" }
-                         else { ' -- a jour' }
+        if ($CheckUpdates) {
+            if ($sockPath) {
+                $latest = Get-LatestReleaseTag -Repo 'fiso64/sockseek'
+                $sockLine += if (-not $latest) { ' -- verification impossible (reseau/quota GitHub)' }
+                             elseif ($sockVersion -and $latest.TrimStart('v') -ne $sockVersion) { " -- mise a jour disponible : $latest" }
+                             else { ' -- a jour' }
+            }
+            if ($ytPath) {
+                $latestYt = Get-LatestReleaseTag -Repo 'yt-dlp/yt-dlp'
+                $ytLine += if (-not $latestYt) { ' -- verification impossible (reseau/quota GitHub)' }
+                           elseif ($ytVersion -and $ytVersion -ne $latestYt) { " -- mise a jour disponible : $latestYt" }
+                           else { ' -- a jour' }
+            }
         }
-        if ($ytPath) {
-            $latestYt = Get-LatestReleaseTag -Repo 'yt-dlp/yt-dlp'
-            $ytLine += if (-not $latestYt) { ' -- verification impossible (reseau/quota GitHub)' }
-                       elseif ($ytVersion -and $ytVersion -ne $latestYt) { " -- mise a jour disponible : $latestYt" }
-                       else { ' -- a jour' }
-        }
+
+        $lblBinStatus.Text = "$sockLine`r`n$ytLine"
     }
-
-    $lblBinStatus.Text = "$sockLine`r`n$ytLine"
+    catch {
+        Write-InterfaceError "Impossible de verifier les binaires : $($_.Exception.Message)"
+    }
 }
 
 $btnInstall.Add_Click({
@@ -518,24 +563,29 @@ $topConfig.SetColumnSpan($grpCreds, 3)
 function Update-ConfigStatus {
     <# N'affiche jamais le mot de passe : seul le pseudo deja enregistre est
        relu et pre-rempli. #>
-    $confPath = Get-SockseekConfPath
-    if (-not (Test-Path -LiteralPath $confPath)) {
-        $lblConfigStatus.Text = 'Configuration actuelle : aucune (sockseek.conf absent)'
-        $lblConfigStatus.ForeColor = [System.Drawing.Color]::DarkRed
-        return
-    }
+    try {
+        $confPath = Get-SockseekConfPath
+        if (-not (Test-Path -LiteralPath $confPath)) {
+            $lblConfigStatus.Text = 'Configuration actuelle : aucune (sockseek.conf absent)'
+            $lblConfigStatus.ForeColor = [System.Drawing.Color]::DarkRed
+            return
+        }
 
-    $userLine = Get-Content -LiteralPath $confPath -Encoding utf8 -ErrorAction SilentlyContinue |
-                Where-Object { $_ -match '^\s*username\s*=' } | Select-Object -First 1
-    if ($userLine -and $userLine -match '^\s*username\s*=\s*(.+?)\s*$') {
-        $existingUser = $matches[1]
-        $lblConfigStatus.Text = "Configuration actuelle : identifiants enregistres pour '$existingUser'"
-        $lblConfigStatus.ForeColor = [System.Drawing.Color]::DarkGreen
-        if ([string]::IsNullOrWhiteSpace($txtConfUser.Text)) { $txtConfUser.Text = $existingUser }
+        $userLine = Get-Content -LiteralPath $confPath -Encoding utf8 -ErrorAction SilentlyContinue |
+                    Where-Object { $_ -match '^\s*username\s*=' } | Select-Object -First 1
+        if ($userLine -and $userLine -match '^\s*username\s*=\s*(.+?)\s*$') {
+            $existingUser = $matches[1]
+            $lblConfigStatus.Text = "Configuration actuelle : identifiants enregistres pour '$existingUser'"
+            $lblConfigStatus.ForeColor = [System.Drawing.Color]::DarkGreen
+            if ([string]::IsNullOrWhiteSpace($txtConfUser.Text)) { $txtConfUser.Text = $existingUser }
+        }
+        else {
+            $lblConfigStatus.Text = 'Configuration actuelle : sockseek.conf existe, mais aucun pseudo lisible'
+            $lblConfigStatus.ForeColor = [System.Drawing.Color]::DarkOrange
+        }
     }
-    else {
-        $lblConfigStatus.Text = 'Configuration actuelle : sockseek.conf existe, mais aucun pseudo lisible'
-        $lblConfigStatus.ForeColor = [System.Drawing.Color]::DarkOrange
+    catch {
+        Write-InterfaceError "Impossible de lire l'etat de la configuration : $($_.Exception.Message)"
     }
 }
 
@@ -724,20 +774,25 @@ function Update-PlaylistDetail {
         return
     }
 
-    $row = $SelectedRow.DataBoundItem
-    $dossier = $row.Dossier
-    $lblDetailTitle.Text = "Playlist : $($row.Playlist)  --  $dossier"
+    try {
+        $row = $SelectedRow.DataBoundItem
+        $dossier = $row.Dossier
+        $lblDetailTitle.Text = "Playlist : $($row.Playlist)  --  $dossier"
 
-    $rapportPath = Join-Path $dossier 'rapport.csv'
-    if (Test-Path -LiteralPath $rapportPath) {
-        $dgvDetail.DataSource = , @(Import-Csv -LiteralPath $rapportPath)
+        $rapportPath = Join-Path $dossier 'rapport.csv'
+        if (Test-Path -LiteralPath $rapportPath) {
+            $dgvDetail.DataSource = , @(Import-Csv -LiteralPath $rapportPath)
+        }
+
+        $latestLog = Get-ChildItem -LiteralPath $dossier -Filter 'sockseek-*.log' -ErrorAction SilentlyContinue |
+                     Sort-Object LastWriteTime -Descending | Select-Object -First 1
+        if ($latestLog) {
+            $script:selectedPlaylistLogPath = $latestLog.FullName
+            $btnOpenLog.Enabled = $true
+        }
     }
-
-    $latestLog = Get-ChildItem -LiteralPath $dossier -Filter 'sockseek-*.log' -ErrorAction SilentlyContinue |
-                 Sort-Object LastWriteTime -Descending | Select-Object -First 1
-    if ($latestLog) {
-        $script:selectedPlaylistLogPath = $latestLog.FullName
-        $btnOpenLog.Enabled = $true
+    catch {
+        Write-InterfaceError "Impossible de charger le detail de la playlist : $($_.Exception.Message)"
     }
 }
 
