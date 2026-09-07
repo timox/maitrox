@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Kit sockseek</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1>Kit sockseek</h1>
+  <nav>
+    <button data-tab="nouvelle" class="active">Nouvelle playlist</button>
+    <button data-tab="config">Configuration</button>
+    <button data-tab="playlists">Playlists</button>
+    <button data-tab="suivi">Suivi d'execution</button>
+  </nav>
+</header>
+
+<main>
+
+  <!-- ============================================== Nouvelle playlist === -->
+  <section id="tab-nouvelle" class="tab active">
+    <fieldset>
+      <legend>Playlist</legend>
+      <div class="row">
+        <input id="new-url" class="grow" type="text" placeholder="URL SoundCloud ou YouTube">
+      </div>
+      <div class="row">
+        <label><input type="radio" name="mode" value="extract" checked> Extraire seulement (CSV, pas de recherche)</label>
+        <label><input type="radio" name="mode" value="test"> Tester (recherche Soulseek, sans telecharger)</label>
+        <label><input type="radio" name="mode" value="download"> Telecharger</label>
+      </div>
+      <div class="row">
+        <label>Cookies navigateur (sets prives) :
+          <select id="new-cookies">
+            <option value="">(aucun)</option>
+            <option>brave</option><option>chrome</option><option>chromium</option>
+            <option>edge</option><option>firefox</option><option>opera</option>
+            <option>safari</option><option>vivaldi</option><option>whale</option>
+          </select>
+        </label>
+      </div>
+      <div class="row">
+        <button class="primary" id="new-launch">Lancer</button>
+      </div>
+    </fieldset>
+  </section>
+
+  <!-- =================================================== Configuration === -->
+  <section id="tab-config" class="tab">
+    <fieldset>
+      <legend>Binaires (sockseek, yt-dlp)</legend>
+      <div id="bin-status" class="muted">Verification...</div>
+      <div class="row">
+        <button id="btn-install">Installer / mettre a jour</button>
+        <button id="btn-check-updates">Verifier les mises a jour</button>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Identifiants Soulseek</legend>
+      <div id="conf-status" class="muted">Verification...</div>
+      <div class="row">
+        <label>Pseudo <input id="conf-user" type="text"></label>
+        <label>Mot de passe <input id="conf-pass" type="password"></label>
+        <button id="btn-save-creds">Enregistrer</button>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Dossier de destination par defaut</legend>
+      <div class="row">
+        <input id="conf-dest" class="grow" type="text">
+        <button id="btn-browse-dest">Parcourir...</button>
+        <button id="btn-save-dest">Enregistrer</button>
+        <button id="btn-open-dest">Ouvrir l'explorateur</button>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Importer un dossier de telechargement existant</legend>
+      <p class="muted">
+        Un dossier deja present sur le disque (deplace a la main, ou telecharge avant
+        l'existence du catalogue) mais absent de l'onglet Playlists : cherche son index, le
+        deplace vers le dossier de destination par defaut ci-dessus (fusionne sans rien
+        ecraser si un dossier du meme nom y existe deja), et l'enregistre -- sans rien
+        retelecharger.
+      </p>
+      <div class="row">
+        <input id="import-path" class="grow" type="text" placeholder="Chemin du dossier">
+        <button id="btn-browse-import">Parcourir...</button>
+      </div>
+      <div class="row">
+        <input id="import-name" type="text" placeholder="Nom (optionnel)">
+        <button id="btn-import" class="primary">Importer</button>
+      </div>
+    </fieldset>
+  </section>
+
+  <!-- ======================================================= Playlists === -->
+  <section id="tab-playlists" class="tab">
+    <div class="row">
+      <input id="pl-search" class="grow" type="text" placeholder="Rechercher...">
+      <span id="pl-info" class="muted"></span>
+    </div>
+    <table id="pl-table">
+      <thead><tr>
+        <th>Playlist</th><th>Manquants</th><th>Recuperes</th><th>Runs</th><th>Dernier essai</th><th>Dossier</th>
+      </tr></thead>
+      <tbody></tbody>
+    </table>
+    <div class="row">
+      <button id="btn-refresh-playlists">Actualiser la liste</button>
+      <button id="btn-resume-all">Reprendre tout, toutes playlists confondues</button>
+      <button id="btn-test-selected">Tester la playlist selectionnee</button>
+      <button id="btn-resume-selected">Reprendre la playlist selectionnee</button>
+      <button id="btn-delete-selected">Supprimer la playlist selectionnee</button>
+    </div>
+
+    <fieldset>
+      <legend id="pl-detail-title">Selectionne une playlist ci-dessus pour voir le detail de son dernier run.</legend>
+      <div class="row">
+        <button id="btn-open-log" disabled>Ouvrir le journal</button>
+        <button id="btn-open-folder" disabled>Ouvrir le dossier</button>
+      </div>
+      <table id="pl-detail-table"><thead><tr></tr></thead><tbody></tbody></table>
+    </fieldset>
+  </section>
+
+  <!-- ================================================ Suivi d'execution === -->
+  <section id="tab-suivi" class="tab">
+    <div class="row">
+      <span id="suivi-status" class="status-line">Pret. Rien n'a encore ete lance.</span>
+      <button id="btn-stop-job" disabled>Arreter l'operation en cours</button>
+    </div>
+    <div id="log"></div>
+  </section>
+
+</main>
+
+<div id="modal-backdrop" class="modal-backdrop" hidden>
+  <div class="modal">
+    <div class="row">
+      <strong id="modal-path" class="grow"></strong>
+    </div>
+    <div class="list" id="modal-list"></div>
+    <div class="row">
+      <button id="modal-up">Dossier parent</button>
+      <button id="modal-choose" class="primary">Choisir ce dossier</button>
+      <button id="modal-cancel">Annuler</button>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
