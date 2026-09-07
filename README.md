@@ -9,11 +9,11 @@ obtenus avec un rapport détaillé de ce qui a échoué et pourquoi.
 | Fichier | Rôle |
 |---|---|
 | `installer.bat` | **Double-clic : installe tout** |
-| `gui.bat` | **Double-clic : interface graphique** — trouve `pwsh` et lance `Show-Gui.ps1` |
+| `webgui.bat` / `webgui.sh` | **Double-clic (ou `./webgui.sh`) : interface graphique**, dans le navigateur — voir plus bas |
+| `webgui/server.js` | Le serveur de l'interface graphique (Node.js, sans dépendance à installer) |
+| `webgui/public/` | Page web de l'interface (HTML/CSS/JS) |
 | `lancer.bat` | Double-clic : menu console (nouvelle playlist, reprise, état) — trouve `pwsh` et lance `Menu.ps1` |
 | `reprendre.bat` | Double-clic : va direct au menu de reprise console, sans passer par celui de `lancer.bat` |
-| `Show-Gui.ps1` | L'interface graphique elle-même (Windows Forms) |
-| `icon.ico` | Icône de la fenêtre de `Show-Gui.ps1` |
 | `Menu.ps1` | Le menu interactif console ; tout le cheminement (retours, sortie) y vit |
 | `Install-Sockseek.ps1` | Télécharge les binaires, crée la configuration, règle le PATH |
 | `Get-SoulseekList.ps1` | Extraction, nettoyage, téléchargement, rapport |
@@ -22,14 +22,27 @@ obtenus avec un rapport détaillé de ce qui a échoué et pourquoi.
 | `SockseekLib.ps1` | Fonctions partagées, pas destiné à être lancé seul |
 
 Si tu n'as pas envie de toucher à une ligne de commande, double-clic sur
-`installer.bat` une fois, puis sur `gui.bat` pour tout le reste : une
-fenêtre avec quatre onglets (Nouvelle playlist, Configuration, Playlists,
-Suivi d'exécution — détail plus bas). `lancer.bat` propose la même chose en
-mode texte dans une console, pour qui préfère ça ou travaille par SSH. Le
-reste de ce document décrit ce que ces outils font et comment piloter les
-scripts directement.
+`installer.bat` une fois, puis sur `webgui.bat` (`./webgui.sh` sous Linux)
+pour tout le reste : ça démarre un petit serveur local et ouvre une page
+avec quatre onglets (Nouvelle playlist, Configuration, Playlists, Suivi
+d'exécution — détail plus bas) dans ton navigateur. `lancer.bat` propose la
+même chose en mode texte dans une console, pour qui préfère ça ou travaille
+par SSH. Le reste de ce document décrit ce que ces outils font et comment
+piloter les scripts directement.
 
-### Interface graphique (`gui.bat`)
+### Interface graphique (`webgui.bat` / `webgui.sh`)
+
+Nécessite [Node.js](https://nodejs.org/) en plus de PowerShell 7 (aucun
+paquet à installer avec `npm` : le serveur n'utilise que ce que Node fournit
+déjà). Double-clic sur `webgui.bat` sous Windows, ou `./webgui.sh` dans un
+terminal sous Linux/macOS : un petit serveur démarre sur
+`http://localhost:8342` et s'ouvre automatiquement dans le navigateur par
+défaut. Toute la logique (nettoyage des titres, catalogue, invocation de
+sockseek/yt-dlp) reste dans les scripts PowerShell existants — le serveur
+Node ne fait que les piloter et afficher le résultat dans une page web,
+ce qui la rend utilisable aussi bien sous Windows que sous Linux (contrairement
+à l'ancienne interface Windows Forms, qui ne pouvait exister que sous
+Windows).
 
 Quatre onglets :
 
@@ -73,21 +86,19 @@ Quatre onglets :
   téléchargements entamés (les fichiers déjà complets restent utilisables,
   sockseek reprendra le reste au prochain lancement).
 
-⚠️ **Testée partiellement.** Un premier passage réel sur Windows a confirmé
-que la fenêtre s'affiche et fonctionne, et a fait remonter de vrais bugs
-depuis corrigés (arguments jamais transmis aux scripts lancés, codes
-couleur ANSI bruts dans le journal, boîtes trop étroites). Le reste a été
-écrit et relu par un modèle de langage sans jamais tourner sur une vraie
-machine Windows : `System.Windows.Forms` n'existe pas sous PowerShell 7 sur
-Linux, il n'y avait donc aucun moyen de l'exécuter pendant son
-développement. La
-logique non graphique qu'elle réutilise (lecture du catalogue, écriture de
-la configuration, gestion des jobs et codes de sortie) a été vérifiée
-séparément et fonctionne, mais la fenêtre elle-même — mise en page,
-événements, tout ce qui dépend réellement de Windows Forms — n'a pas pu
-l'être. Si quelque chose se comporte mal, dis-le : ça se corrige vite une
-fois le symptôme connu. En cas de souci bloquant, `lancer.bat` (menu
-console) offre exactement les mêmes actions.
+⚠️ **Testée côté serveur, pas encore dans un vrai navigateur.** Le serveur
+Node (`webgui/server.js`) a été lancé pour de vrai pendant son développement,
+avec de vraies requêtes HTTP contre chaque route (statut des binaires,
+catalogue, import/déplacement/fusion de dossier, suppression, et le cycle
+complet démarrage/journal en direct/arrêt d'un job — y compris la
+terminaison forcée de l'arbre de processus, vérifiée en la reproduisant
+directement). La page web elle-même (`webgui/public/`), en revanche, n'a
+jamais été ouverte dans un vrai navigateur ni cliquée pour de vrai : mise en
+page, comportement exact des boutons/formulaires, tout ce qui ne s'observe
+que visuellement reste à confirmer en conditions réelles. Si quelque chose
+se comporte mal, dis-le : ça se corrige vite une fois le symptôme connu. En
+cas de souci bloquant, `lancer.bat` (menu console) offre exactement les
+mêmes actions.
 
 ## Prérequis
 
@@ -100,6 +111,13 @@ winget install --id Microsoft.PowerShell --source winget
 
 Ensuite, ouvre **pwsh** (pas `powershell.exe`, ni ISE — ISE est resté bloqué
 sur 5.1 et ne sera jamais porté).
+
+Pour l'interface graphique (`webgui.bat`/`webgui.sh`) uniquement : il faut
+aussi [Node.js](https://nodejs.org/) (n'importe quelle version récente).
+Rien d'autre à installer avec `npm` — le serveur n'utilise que ce que Node
+fournit déjà. Sans interface graphique, seul pwsh est nécessaire
+(`lancer.bat`/`Menu.ps1` et les scripts en ligne de commande n'en ont pas
+besoin).
 
 ## Installation
 
@@ -233,6 +251,21 @@ navigateur. Sur certains navigateurs, le fichier de cookies est verrouillé
 tant que le navigateur est ouvert ; ferme-le si l'extraction échoue.
 L'interface graphique propose la même option dans l'onglet « Nouvelle
 playlist ».
+
+### Téléchargement direct des titres en libre téléchargement
+
+Certains morceaux SoundCloud proposent un vrai bouton « Télécharger » —
+l'artiste a explicitement autorisé le téléchargement du fichier original,
+en plus de l'écoute en streaming. yt-dlp sait le détecter et le récupérer
+directement, sans passer par Soulseek. `-Download` s'en sert
+automatiquement : pour chaque titre proposant ce téléchargement libre, le
+fichier original est téléchargé directement via yt-dlp (avec
+`-CookiesFromBrowser` si fourni, utile pour les titres qui exigent d'être
+connecté) ; seuls les titres restants (pas de téléchargement libre, ou
+téléchargement direct en échec) partent en recherche sur Soulseek. Si tous
+les titres d'une playlist sont récupérés directement, sockseek n'est même
+pas lancé. `-PrintOnly` ignore ce mécanisme (il ne fait que prévisualiser
+la recherche Soulseek, rien n'est téléchargé dans les deux cas).
 
 ### Un sous-dossier par playlist
 

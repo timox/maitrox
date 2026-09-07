@@ -278,20 +278,38 @@ function Get-RunResults {
         })
     }
 
-    # Titres presents dans la source mais absents de l'index : jamais traites.
+    # Titres presents dans la source mais absents de l'index : jamais confies
+    # a sockseek. Peut malgre tout etre deja sur le disque -- notamment un
+    # titre recupere directement via yt-dlp (telechargement libre SoundCloud,
+    # voir Get-SoulseekList.ps1) plutot que cherche sur Soulseek : la verite
+    # vient du disque, pas seulement de l'index, memes ici.
     if ($SourceCsv -and (Test-Path -LiteralPath $SourceCsv)) {
         $seen = @{}
         foreach ($r in $results) { $seen["$($r.Artist)|$($r.Title)".ToLower().Trim()] = $true }
         foreach ($src in (Import-Csv -LiteralPath $SourceCsv)) {
             $k = "$($src.Artist)|$($src.Title)".ToLower().Trim()
             if (-not $seen.ContainsKey($k)) {
-                $results.Add([pscustomobject]@{
-                    Artist = $src.Artist; Title = $src.Title; Album = ''
-                    Length = $src.Length
-                    Statut = 'Jamais traite'
-                    Detail = "Absent de l'index : run interrompu ou entree ignoree"
-                    Chemin = ''; Reussi = $false
-                })
+                $directPattern = "$(ConvertTo-SafeFolderName "$($src.Artist) - $($src.Title)").*"
+                $directFile = Get-ChildItem -LiteralPath $OutputDir -Filter $directPattern -File -ErrorAction SilentlyContinue |
+                              Select-Object -First 1
+                if ($directFile) {
+                    $results.Add([pscustomobject]@{
+                        Artist = $src.Artist; Title = $src.Title; Album = ''
+                        Length = $src.Length
+                        Statut = 'Telecharge directement (SoundCloud)'
+                        Detail = "Telechargement libre propose par l'artiste"
+                        Chemin = $directFile.FullName; Reussi = $true
+                    })
+                }
+                else {
+                    $results.Add([pscustomobject]@{
+                        Artist = $src.Artist; Title = $src.Title; Album = ''
+                        Length = $src.Length
+                        Statut = 'Jamais traite'
+                        Detail = "Absent de l'index : run interrompu ou entree ignoree"
+                        Chemin = ''; Reussi = $false
+                    })
+                }
             }
         }
     }

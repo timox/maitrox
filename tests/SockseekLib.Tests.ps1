@@ -234,6 +234,39 @@ manquant/Artist - Title.mp3,Artist,,Title,300,0,1,0
         $result[0].Reussi | Should -BeFalse
         $result[0].Statut | Should -Be 'Fichier absent du disque'
     }
+
+    It "un titre absent de l'index mais telecharge directement (SoundCloud libre) est detecte sur le disque" {
+        $direct = Join-Path $testDir 'direct'
+        New-Item -ItemType Directory -Path $direct -Force | Out-Null
+        New-Item -ItemType File -Path (Join-Path $direct 'DirectArtist - DirectTitle.mp3') -Force | Out-Null
+
+        $src = Join-Path $direct 'source.csv'
+        @'
+Artist,Title,Length,Review
+DirectArtist,DirectTitle,200,
+'@ | Set-Content -LiteralPath $src -Encoding utf8NoBOM
+
+        # Pas d'index du tout (ou vide) : sockseek n'a jamais vu ce titre.
+        $result = Get-RunResults -OutputDir $direct -SourceCsv $src
+        $result.Count | Should -Be 1
+        $result[0].Statut | Should -Be 'Telecharge directement (SoundCloud)'
+        $result[0].Reussi | Should -BeTrue
+    }
+
+    It "un titre absent de l'index et absent du disque reste 'jamais traite'" {
+        $direct = Join-Path $testDir 'direct2'
+        New-Item -ItemType Directory -Path $direct -Force | Out-Null
+
+        $src = Join-Path $direct 'source.csv'
+        @'
+Artist,Title,Length,Review
+Personne,Rien,200,
+'@ | Set-Content -LiteralPath $src -Encoding utf8NoBOM
+
+        $result = Get-RunResults -OutputDir $direct -SourceCsv $src
+        $result[0].Statut | Should -Be 'Jamais traite'
+        $result[0].Reussi | Should -BeFalse
+    }
 }
 
 Describe 'ConvertTo-SafeFolderName' {
