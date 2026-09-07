@@ -234,6 +234,21 @@ tant que le navigateur est ouvert ; ferme-le si l'extraction échoue.
 L'interface graphique propose la même option dans l'onglet « Nouvelle
 playlist ».
 
+### Téléchargement direct des titres en libre téléchargement
+
+Certains morceaux SoundCloud proposent un vrai bouton « Télécharger » —
+l'artiste a explicitement autorisé le téléchargement du fichier original,
+en plus de l'écoute en streaming. yt-dlp sait le détecter et le récupérer
+directement, sans passer par Soulseek. `-Download` s'en sert
+automatiquement : pour chaque titre proposant ce téléchargement libre, le
+fichier original est téléchargé directement via yt-dlp (avec
+`-CookiesFromBrowser` si fourni, utile pour les titres qui exigent d'être
+connecté) ; seuls les titres restants (pas de téléchargement libre, ou
+téléchargement direct en échec) partent en recherche sur Soulseek. Si tous
+les titres d'une playlist sont récupérés directement, sockseek n'est même
+pas lancé. `-PrintOnly` ignore ce mécanisme (il ne fait que prévisualiser
+la recherche Soulseek, rien n'est téléchargé dans les deux cas).
+
 ### Un sous-dossier par playlist
 
 Chaque playlist télécharge dans son propre sous-dossier, nommé d'après son

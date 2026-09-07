@@ -137,6 +137,23 @@ $destDir        = Join-Path $OutputDir $playlistFolder
 
 Write-Host "$($entries.Count) pistes recuperees." -ForegroundColor Cyan
 
+# yt-dlp sait recuperer le fichier original directement quand l'artiste a
+# active le telechargement libre sur SoundCloud (champ API "downloadable" +
+# quota "has_downloads_left", verifie dans le vrai code source de
+# l'extracteur SoundCloud de yt-dlp) : un format nomme "download" apparait
+# alors dans les metadonnees deja recuperees ci-dessus. Chemin legitime,
+# autorise par l'artiste -- distinct du streaming -- qui evite une recherche
+# Soulseek pour ces titres-la.
+$directDownloadUrls = [System.Collections.Generic.HashSet[string]]::new()
+foreach ($e in $entries) {
+    if ($e.webpage_url -and (@($e.formats) | Where-Object { $_.format_id -eq 'download' })) {
+        [void]$directDownloadUrls.Add([string]$e.webpage_url)
+    }
+}
+if ($directDownloadUrls.Count -gt 0) {
+    Write-Host "$($directDownloadUrls.Count) titre(s) en telechargement libre directement sur SoundCloud." -ForegroundColor Cyan
+}
+
 # ---------------------------------------------------------------- export ----
 if ($RawOut) {
     $entries | ForEach-Object {
@@ -191,6 +208,64 @@ if (-not $Download) {
     Write-Host ""
     Write-Host "Pour verifier ce que sockseek trouverait :" -ForegroundColor Cyan
     Write-Host "  .\Get-SoulseekList.ps1 -Url `"$Url`" -Download -PrintOnly"
+    return
+}
+
+New-Item -ItemType Directory -Path $destDir -Force | Out-Null
+
+# --------------------------------------- telechargement direct (SoundCloud) --
+$directRows = @($rows | Where-Object { $directDownloadUrls.Contains($_.Url) })
+$searchRows = @($rows | Where-Object { -not $directDownloadUrls.Contains($_.Url) })
+
+if ($directRows.Count -gt 0 -and $PrintOnly) {
+    # -PrintOnly ne fait que previsualiser la recherche Soulseek : rien a
+    # telecharger, direct ou non, dans ce mode.
+    Write-Host ""
+    Write-Host "$($directRows.Count) titre(s) en telechargement libre ignore(s) en mode -PrintOnly." -ForegroundColor DarkGray
+    $searchRows = $rows
+}
+elseif ($directRows.Count -gt 0) {
+    Write-Host ""
+    Write-Host "Telechargement direct de $($directRows.Count) titre(s) libres sur SoundCloud..." -ForegroundColor Cyan
+    foreach ($row in $directRows) {
+        $safeName    = ConvertTo-SafeFolderName "$($row.Artist) - $($row.Title)"
+        $outTemplate = Join-Path $destDir "$safeName.%(ext)s"
+
+        $dlArgs = @('-f', 'download', '--no-playlist', '-o', $outTemplate)
+        if ($CookiesFromBrowser) { $dlArgs += @('--cookies-from-browser', $CookiesFromBrowser) }
+        $dlArgs += $row.Url
+
+        & yt-dlp @dlArgs
+        if ($LASTEXITCODE -eq 0) {
+            Write-Host "  OK : $($row.Artist) - $($row.Title)" -ForegroundColor Green
+        }
+        else {
+            Write-Warning "  Echec du telechargement direct, recherche Soulseek en repli : $($row.Artist) - $($row.Title)"
+            $searchRows += $row
+        }
+    }
+}
+
+# Le CSV donne a sockseek exclut les titres deja recuperes directement --
+# Build-Playlist.ps1, lui, continue a lire le CSV complet ($Out) pour que le
+# rapport final les compte comme reussis (verite sur le disque, cf.
+# Get-RunResults) plutot que de les afficher comme jamais traites.
+$sockseekCsv = $Out
+if ($searchRows.Count -ne $rows.Count) {
+    $sockseekCsv = Join-Path $destDir 'a-rechercher.csv'
+    $searchRows | Export-Csv -Path $sockseekCsv -NoTypeInformation -Encoding utf8NoBOM
+}
+
+if ($searchRows.Count -eq 0) {
+    Write-Host ""
+    Write-Host "Tous les titres ont ete recuperes directement : aucune recherche Soulseek necessaire." -ForegroundColor Green
+    $builder = Join-Path (Split-Path -Parent $PSCommandPath) 'Build-Playlist.ps1'
+    if (Test-Path -LiteralPath $builder) {
+        & $builder -OutputDir $destDir -SourceCsv $Out -Register $Url
+    }
+    else {
+        Write-Warning "Build-Playlist.ps1 absent : ni rapport ni playlist generes."
+    }
     return
 }
 
@@ -305,10 +380,9 @@ Sinon, en depannage : -Credential (Get-Credential)
 
 $idxPath = Join-Path $destDir '_index.csv'
 $logPath = Join-Path $destDir ("sockseek-{0}.log" -f (Get-Date -Format 'yyyyMMdd-HHmmss'))
-New-Item -ItemType Directory -Path $destDir -Force | Out-Null
 
 $sockArgs = @(
-    $Out
+    $sockseekCsv
     '--index-path', $idxPath
     '--log-file', $logPath
     '--song'
@@ -328,7 +402,7 @@ if ($PrintOnly) {
 else {
     Write-Host ""
     Write-Host "Telechargement vers $destDir" -ForegroundColor Cyan
-    Write-Host "Compte environ $([math]::Ceiling($rows.Count / 34.0) * 220 / 60) minutes minimum : le serveur Soulseek"
+    Write-Host "Compte environ $([math]::Ceiling($searchRows.Count / 34.0) * 220 / 60) minutes minimum : le serveur Soulseek"
     Write-Host "bannit 30 minutes si les recherches s'enchainent trop vite." -ForegroundColor DarkGray
 }
 
