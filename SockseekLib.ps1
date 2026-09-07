@@ -556,17 +556,88 @@ function Register-Playlist {
     Save-Catalogue $entries
 }
 
+function Move-PlaylistToDefaultLocation {
+    <# Deplace un dossier de playlist vers le dossier de destination par
+       defaut configure dans l'interface (Get-DefaultOutputDir), pour
+       recentraliser des telechargements eparpilles a differents
+       emplacements au fil du temps.
+
+       Si un dossier du meme nom existe deja a destination (playlist deja
+       partiellement centralisee la-bas), fusionne fichier par fichier sans
+       jamais ecraser un fichier existant : en cas de conflit (meme chemin
+       relatif present aux deux emplacements), le fichier source est laisse
+       en place plutot que perdu -- mieux vaut un doublon residuel visible
+       qu'un fichier telecharge efface silencieusement. #>
+    param(
+        [Parameter(Mandatory)] [string] $SourceDir,
+        [Parameter(Mandatory)] [string] $Name
+    )
+
+    $destRoot = Get-DefaultOutputDir
+    New-Item -ItemType Directory -Path $destRoot -Force | Out-Null
+
+    $sourceFull = (Resolve-Path -LiteralPath $SourceDir).Path
+    $targetDir  = Join-Path $destRoot (ConvertTo-SafeFolderName $Name)
+
+    if ((Test-Path -LiteralPath $targetDir) -and
+        ((Resolve-Path -LiteralPath $targetDir).Path -eq $sourceFull)) {
+        # Deja au bon endroit (reimport d'une playlist deja centralisee).
+        return $sourceFull
+    }
+
+    if (-not (Test-Path -LiteralPath $targetDir)) {
+        Move-Item -LiteralPath $sourceFull -Destination $targetDir
+        return (Resolve-Path -LiteralPath $targetDir).Path
+    }
+
+    $skipped = [System.Collections.Generic.List[string]]::new()
+    Get-ChildItem -LiteralPath $sourceFull -Recurse -File | ForEach-Object {
+        $rel = $_.FullName.Substring($sourceFull.Length).TrimStart('\', '/')
+        $destPath = Join-Path $targetDir $rel
+        if (Test-Path -LiteralPath $destPath) {
+            $skipped.Add($rel)
+        }
+        else {
+            New-Item -ItemType Directory -Path (Split-Path -Parent $destPath) -Force | Out-Null
+            Move-Item -LiteralPath $_.FullName -Destination $destPath
+        }
+    }
+
+    # Retire les dossiers source devenus vides ; laisse en place ceux qui
+    # contiennent encore des fichiers en conflit, non deplaces.
+    Get-ChildItem -LiteralPath $sourceFull -Recurse -Directory |
+        Sort-Object { $_.FullName.Length } -Descending |
+        ForEach-Object {
+            if (@(Get-ChildItem -LiteralPath $_.FullName -Force).Count -eq 0) {
+                Remove-Item -LiteralPath $_.FullName -Force
+            }
+        }
+    if ((Test-Path -LiteralPath $sourceFull) -and
+        @(Get-ChildItem -LiteralPath $sourceFull -Force).Count -eq 0) {
+        Remove-Item -LiteralPath $sourceFull -Force
+    }
+
+    if ($skipped.Count -gt 0) {
+        Write-Warning ("Fusion partielle vers '$targetDir' : $($skipped.Count) fichier(s) " +
+            "deja present(s) a destination, laisse(s) dans '$sourceFull' : $($skipped -join ', ')")
+    }
+
+    return (Resolve-Path -LiteralPath $targetDir).Path
+}
+
 function Import-PlaylistFolder {
     <# Rend gerable, depuis l'onglet Playlists, un dossier de telechargement
        existant jamais enregistre dans le catalogue centralise -- deplace a
        la main, telecharge avant l'introduction de ce catalogue, ou produit
        sur une autre machine. Aucune extraction n'est relancee : on relit
-       juste ce qui est deja sur le disque.
+       juste ce qui est deja sur le disque. Le dossier est aussi deplace
+       (ou fusionne, voir Move-PlaylistToDefaultLocation) vers le dossier
+       de destination par defaut, pour recentraliser les telechargements.
 
        La cle du catalogue est l'URL d'origine (voir Register-Playlist),
        perdue pour un dossier importe : on fabrique donc un identifiant
-       stable a partir du chemin du dossier -- reimporter le meme dossier
-       met a jour l'entree plutot que d'en creer une seconde. #>
+       stable a partir du nom retenu -- reimporter avec le meme nom met a
+       jour l'entree plutot que d'en creer une seconde. #>
     param(
         [Parameter(Mandatory)] [string] $FolderPath,
         [string] $Name
@@ -576,6 +647,18 @@ function Import-PlaylistFolder {
         throw "Dossier introuvable : $FolderPath"
     }
     $resolved = (Resolve-Path -LiteralPath $FolderPath).Path
+    if (-not $Name) { $Name = Split-Path -Leaf $resolved }
+
+    # Valide AVANT de deplacer quoi que ce soit : un dossier qui n'est pas
+    # une vraie playlist sockseek (ni index ni audio) ne doit pas laisser un
+    # dossier vide residuel a la destination si l'import echoue ensuite.
+    $probeIndex = Get-ChildItem -Path $resolved -Recurse -File -Filter '_index.csv' -ErrorAction SilentlyContinue |
+                  Select-Object -First 1 | ForEach-Object { $_.FullName }
+    if (@(Get-RunResults -IndexPath $probeIndex -OutputDir $resolved).Count -eq 0) {
+        throw "Aucun index sockseek (_index.csv) ni fichier audio trouve dans ce dossier : $resolved"
+    }
+
+    $resolved = Move-PlaylistToDefaultLocation -SourceDir $resolved -Name $Name
 
     $indexPath = Get-ChildItem -Path $resolved -Recurse -File -Filter '_index.csv' -ErrorAction SilentlyContinue |
                  Sort-Object LastWriteTime -Descending | Select-Object -First 1 |
@@ -591,16 +674,11 @@ function Import-PlaylistFolder {
                  ForEach-Object { $_.FullName }
     if (-not $sourceCsv) { $sourceCsv = Join-Path $resolved 'playlist-clean.csv' }
 
-    if (-not $Name) { $Name = Split-Path -Leaf $resolved }
-
     $results = @(Get-RunResults -IndexPath $indexPath -OutputDir $resolved -SourceCsv $sourceCsv)
-    if ($results.Count -eq 0) {
-        throw "Aucun index sockseek (_index.csv) ni fichier audio trouve dans ce dossier : $resolved"
-    }
     $total = $results.Count
     $ok    = @($results | Where-Object { $_.Reussi }).Count
 
-    $url = "local-import://$resolved"
+    $url = "local-import://$(ConvertTo-SafeFolderName $Name)"
     Register-Playlist -Url $url -OutputDir $resolved -SourceCsv $sourceCsv `
                        -IndexPath $indexPath -Name $Name -Total $total -Ok $ok
 
@@ -613,6 +691,29 @@ function Import-PlaylistFolder {
         Ok        = $ok
         Manquants = $total - $ok
     }
+}
+
+function Remove-CatalogueEntry {
+    <# Retire une playlist du catalogue (onglet Playlists), avec ou sans ses
+       fichiers sur le disque. #>
+    param(
+        [Parameter(Mandatory)] [string] $Url,
+        [switch] $DeleteFiles
+    )
+
+    $entries = @(Read-Catalogue)
+    $entry = $entries | Where-Object { $_.Url -eq $Url } | Select-Object -First 1
+    if (-not $entry) {
+        throw "Playlist introuvable dans le catalogue (URL : $Url)"
+    }
+
+    if ($DeleteFiles -and $entry.OutputDir -and (Test-Path -LiteralPath $entry.OutputDir)) {
+        Remove-Item -LiteralPath $entry.OutputDir -Recurse -Force
+    }
+
+    $remaining = @($entries | Where-Object { $_.Url -ne $Url })
+    Save-Catalogue $remaining
+    return $entry
 }
 
 function Get-PlaylistPending {

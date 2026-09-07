@@ -289,6 +289,7 @@ function Get-StateRows {
                 Runs            = $e.RunCount
                 'Dernier essai' = if ($e.LastRun) { ([datetime]$e.LastRun).ToString('yyyy-MM-dd HH:mm') } else { '' }
                 Dossier         = $e.OutputDir
+                Url             = $e.Url
             }
         }
         catch {
@@ -300,6 +301,7 @@ function Get-StateRows {
                 Runs            = $e.RunCount
                 'Dernier essai' = if ($e.LastRun) { ([datetime]$e.LastRun).ToString('yyyy-MM-dd HH:mm') } else { '' }
                 Dossier         = $e.OutputDir
+                Url             = $e.Url
             }
         }
     }
@@ -321,6 +323,9 @@ function Update-StateGrid {
         }
         $Grid.DataSource = $null
         $Grid.DataSource = ConvertTo-DataTable $rows
+        # Url sert a retrouver l'entree du catalogue (bouton Supprimer),
+        # mais n'a rien a faire dans une colonne affichee.
+        if ($Grid.Columns['Url']) { $Grid.Columns['Url'].Visible = $false }
         if ($lblPlaylistsInfo) {
             $shown = @($rows).Count
             $countText = if ($filter) { "$shown / $totalCount playlist(s) (filtre actif)" }
@@ -722,7 +727,7 @@ $btnSaveCreds.Add_Click({
 $grpDest = [System.Windows.Forms.GroupBox]::new()
 $grpDest.Text = 'Dossier de destination par defaut'
 $grpDest.Width = 700
-$grpDest.Height = 70
+$grpDest.Height = 100
 
 $txtConfDest = [System.Windows.Forms.TextBox]::new()
 $txtConfDest.Location = [System.Drawing.Point]::new(10, 25)
@@ -739,9 +744,27 @@ $btnConfSaveDest.Text = 'Enregistrer'
 $btnConfSaveDest.AutoSize = $true
 $btnConfSaveDest.Location = [System.Drawing.Point]::new(590, 23)
 
-$grpDest.Controls.AddRange(@($txtConfDest, $btnConfBrowse, $btnConfSaveDest))
+$btnConfOpenDest = [System.Windows.Forms.Button]::new()
+$btnConfOpenDest.Text = "Ouvrir l'explorateur"
+$btnConfOpenDest.AutoSize = $true
+$btnConfOpenDest.Location = [System.Drawing.Point]::new(10, 58)
+
+$grpDest.Controls.AddRange(@($txtConfDest, $btnConfBrowse, $btnConfSaveDest, $btnConfOpenDest))
 [void]$topConfig.Controls.Add($grpDest, 0, 2)
 $topConfig.SetColumnSpan($grpDest, 3)
+
+$btnConfOpenDest.Add_Click({
+    $d = $txtConfDest.Text.Trim()
+    if ([string]::IsNullOrWhiteSpace($d)) { return }
+    try {
+        New-Item -ItemType Directory -Path $d -Force | Out-Null
+        Start-Process -FilePath $d
+    }
+    catch {
+        [System.Windows.Forms.MessageBox]::Show("Impossible d'ouvrir ce dossier : $($_.Exception.Message)",
+            'Kit sockseek', 'OK', 'Error') | Out-Null
+    }
+})
 
 $btnConfBrowse.Add_Click({
     $dlg = [System.Windows.Forms.FolderBrowserDialog]::new()
@@ -772,7 +795,9 @@ $lblImportHelp.Location = [System.Drawing.Point]::new(10, 22)
 $lblImportHelp.Size = [System.Drawing.Size]::new(670, 32)
 $lblImportHelp.Text = "Un dossier de telechargement deja present sur le disque (deplace a la " +
                        "main, ou telecharge avant l'existence du catalogue) mais absent de " +
-                       "l'onglet Playlists : cherche son index et l'enregistre, sans rien retelecharger."
+                       "l'onglet Playlists : cherche son index, le deplace vers le dossier de " +
+                       "destination par defaut ci-dessus (fusionne sans rien ecraser si un dossier " +
+                       "du meme nom y existe deja), et l'enregistre -- sans rien retelecharger."
 
 $btnImportFolder = [System.Windows.Forms.Button]::new()
 $btnImportFolder.Text = 'Importer un dossier...'
@@ -794,6 +819,7 @@ $btnImportFolder.Add_Click({
         [System.Windows.Forms.MessageBox]::Show(
             "Playlist '$($imported.Name)' importee : $($imported.Ok) recuperes, " +
             "$($imported.Manquants) manquants sur $($imported.Total) au total.`n`n" +
+            "Deplacee vers : $($imported.OutputDir)`n`n" +
             "Elle apparait maintenant dans l'onglet Playlists (reprise possible normalement).",
             'Kit sockseek', 'OK', 'Information') | Out-Null
     }
@@ -849,7 +875,12 @@ $btnResumeSelected.Text = 'Reprendre la playlist selectionnee'
 $btnResumeSelected.AutoSize = $true
 $btnResumeSelected.Margin = [System.Windows.Forms.Padding]::new(3, 10, 3, 3)
 
-$barPlaylists.Controls.AddRange(@($btnRefreshPlaylists, $btnResumeAll, $btnTestSelected, $btnResumeSelected))
+$btnDeletePlaylist = [System.Windows.Forms.Button]::new()
+$btnDeletePlaylist.Text = 'Supprimer la playlist selectionnee'
+$btnDeletePlaylist.AutoSize = $true
+$btnDeletePlaylist.Margin = [System.Windows.Forms.Padding]::new(3, 10, 3, 3)
+
+$barPlaylists.Controls.AddRange(@($btnRefreshPlaylists, $btnResumeAll, $btnTestSelected, $btnResumeSelected, $btnDeletePlaylist))
 
 $barSearch = [System.Windows.Forms.FlowLayoutPanel]::new()
 $barSearch.Dock = 'Top'
@@ -925,19 +956,28 @@ $btnOpenLog.AutoSize = $true
 $btnOpenLog.Enabled = $false
 $btnOpenLog.Margin = [System.Windows.Forms.Padding]::new(15, 3, 3, 3)
 
-$barDetail.Controls.AddRange(@($lblDetailTitle, $btnOpenLog))
+$btnOpenFolder = [System.Windows.Forms.Button]::new()
+$btnOpenFolder.Text = 'Ouvrir le dossier'
+$btnOpenFolder.AutoSize = $true
+$btnOpenFolder.Enabled = $false
+$btnOpenFolder.Margin = [System.Windows.Forms.Padding]::new(3, 3, 3, 3)
+
+$barDetail.Controls.AddRange(@($lblDetailTitle, $btnOpenFolder, $btnOpenLog))
 
 $panelDetail.Controls.Add($dgvDetail)
 $panelDetail.Controls.Add($barDetail)
 
 $script:selectedPlaylistLogPath = $null
+$script:selectedPlaylistFolder  = $null
 
 function Update-PlaylistDetail {
     param($SelectedRow)
 
     $dgvDetail.DataSource = $null
     $btnOpenLog.Enabled = $false
+    $btnOpenFolder.Enabled = $false
     $script:selectedPlaylistLogPath = $null
+    $script:selectedPlaylistFolder  = $null
 
     if (-not $SelectedRow) {
         $lblDetailTitle.Text = 'Selectionne une playlist ci-dessus pour voir le detail de son dernier run.'
@@ -948,6 +988,11 @@ function Update-PlaylistDetail {
         $row = $SelectedRow.DataBoundItem
         $dossier = $row.Dossier
         $lblDetailTitle.Text = "Playlist : $($row.Playlist)  --  $dossier"
+
+        if ($dossier -and (Test-Path -LiteralPath $dossier)) {
+            $script:selectedPlaylistFolder = $dossier
+            $btnOpenFolder.Enabled = $true
+        }
 
         $rapportPath = Join-Path $dossier 'rapport.csv'
         if (Test-Path -LiteralPath $rapportPath) {
@@ -965,6 +1010,16 @@ function Update-PlaylistDetail {
         Write-InterfaceError "Impossible de charger le detail de la playlist : $($_.Exception.Message)"
     }
 }
+
+$btnOpenFolder.Add_Click({
+    if ($script:selectedPlaylistFolder) {
+        try { Start-Process -FilePath $script:selectedPlaylistFolder }
+        catch {
+            [System.Windows.Forms.MessageBox]::Show("Impossible d'ouvrir le dossier : $($_.Exception.Message)",
+                'Kit sockseek', 'OK', 'Error') | Out-Null
+        }
+    }
+})
 
 $dgvPlaylists.Add_SelectionChanged({
     if ($dgvPlaylists.SelectedRows.Count -gt 0) {
@@ -997,13 +1052,19 @@ $btnResumeAll.Add_Click({
     }.GetNewClosure()
 })
 
-function Get-SelectedPlaylistName {
+function Get-SelectedPlaylistRow {
     if ($dgvPlaylists.SelectedRows.Count -eq 0) {
         [System.Windows.Forms.MessageBox]::Show('Selectionne une playlist dans la liste.',
             'Kit sockseek', 'OK', 'Warning') | Out-Null
         return $null
     }
-    return $dgvPlaylists.SelectedRows[0].DataBoundItem.Playlist
+    return $dgvPlaylists.SelectedRows[0].DataBoundItem
+}
+
+function Get-SelectedPlaylistName {
+    $row = Get-SelectedPlaylistRow
+    if (-not $row) { return $null }
+    return $row.Playlist
 }
 
 $btnTestSelected.Add_Click({
@@ -1021,6 +1082,33 @@ $btnResumeSelected.Add_Click({
             param($code)
             Update-StateGrid $dgvPlaylists
         }.GetNewClosure()
+})
+
+$btnDeletePlaylist.Add_Click({
+    $row = Get-SelectedPlaylistRow
+    if (-not $row) { return }
+    if (-not $row.Url) {
+        [System.Windows.Forms.MessageBox]::Show("Cette ligne n'a pas d'identifiant de catalogue exploitable (erreur de lecture ?).",
+            'Kit sockseek', 'OK', 'Warning') | Out-Null
+        return
+    }
+
+    $choice = [System.Windows.Forms.MessageBox]::Show(
+        "Supprimer aussi les fichiers telecharges sur le disque ?`n$($row.Dossier)`n`n" +
+        "Oui : supprime le dossier complet (irreversible).`n" +
+        "Non : retire seulement la playlist du catalogue, les fichiers restent en place.",
+        'Kit sockseek', 'YesNoCancel', 'Warning')
+    if ($choice -eq [System.Windows.Forms.DialogResult]::Cancel) { return }
+
+    try {
+        Remove-CatalogueEntry -Url $row.Url -DeleteFiles:($choice -eq [System.Windows.Forms.DialogResult]::Yes)
+        Update-StateGrid $dgvPlaylists
+        Update-PlaylistDetail -SelectedRow $null
+    }
+    catch {
+        [System.Windows.Forms.MessageBox]::Show("Echec de la suppression : $($_.Exception.Message)",
+            'Kit sockseek', 'OK', 'Error') | Out-Null
+    }
 })
 
 # --------------------------------------------------- onglet suivi execution
@@ -1055,7 +1143,7 @@ $tabSuivi.Controls.Add($barSuivi)
 # ------------------------------------------------------- boutons a verrouiller
 $script:busyControls.AddRange(@(
     $btnStart, $btnInstall, $btnCheckUpdates, $btnImportFolder,
-    $btnRefreshPlaylists, $btnResumeAll, $btnTestSelected, $btnResumeSelected
+    $btnRefreshPlaylists, $btnResumeAll, $btnTestSelected, $btnResumeSelected, $btnDeletePlaylist
 ))
 
 # ---------------------------------------------------------------- demarrage

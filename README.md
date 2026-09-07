@@ -41,17 +41,27 @@ Quatre onglets :
   sur demande (bouton séparé, appelle l'API GitHub) ; identifiants Soulseek
   (écrits directement dans `sockseek.conf`, en préservant tes réglages
   existants), avec rappel du pseudo déjà enregistré s'il y en a un ; dossier
-  de destination par défaut ; import d'un dossier de téléchargement existant
+  de destination par défaut, avec un bouton pour l'ouvrir directement dans
+  l'explorateur de fichiers ; import d'un dossier de téléchargement existant
   (déplacé à la main, ou téléchargé avant l'existence du catalogue
   centralisé) — retrouve son `_index.csv` (ou balaie les fichiers audio s'il
-  n'y en a pas) et l'enregistre dans le catalogue sans rien retélécharger,
-  pour le faire réapparaître dans l'onglet Playlists et permettre une
-  reprise normale. Réimporter le même dossier met simplement à jour l'entrée
-  existante au lieu d'en créer une seconde.
+  n'y en a pas), **déplace le dossier vers la destination par défaut**
+  ci-dessus pour recentraliser les téléchargements éparpillés, puis
+  l'enregistre dans le catalogue sans rien retélécharger. Si un dossier du
+  même nom existe déjà à destination (playlist déjà en partie centralisée),
+  fusionne fichier par fichier sans jamais écraser un fichier existant — un
+  fichier en conflit (même nom aux deux emplacements) reste à son
+  emplacement d'origine plutôt que d'être perdu. Réimporter une playlist déjà
+  centralisée (ou sous le même nom) met simplement à jour l'entrée existante
+  au lieu d'en créer une seconde.
 - **Playlists** — liste des playlists déjà traitées (le catalogue), avec le
   détail du dernier run pour celle sélectionnée (le `rapport.csv` par titre,
-  et un bouton pour ouvrir le journal complet) ; boutons pour tester ou
-  reprendre la playlist sélectionnée, ou tout reprendre d'un coup.
+  un bouton pour ouvrir le journal complet, et un bouton pour ouvrir son
+  dossier de téléchargement dans l'explorateur de fichiers) ; boutons pour
+  tester ou reprendre la playlist sélectionnée, tout reprendre d'un coup, ou
+  supprimer la playlist sélectionnée (au choix : juste l'entrée du catalogue,
+  ou l'entrée et ses fichiers téléchargés — demande confirmation dans les
+  deux cas, la suppression des fichiers étant irréversible).
 - **Suivi d'exécution** — le journal en direct de l'opération en cours (ou de
   la dernière terminée), avec un bouton **Arrêter l'opération en cours**
   (demande confirmation, puis tue tout de suite le processus et ses
