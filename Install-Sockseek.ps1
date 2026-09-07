@@ -167,9 +167,37 @@ Deux contournements :
     throw "Aucun asset correspondant a '$Pattern' dans les releases de $Repo."
 }
 
+# sockseek publie une release par plateforme (verifie dans le vrai depot,
+# build/PublishZip.targets) : sockseek_<version>_win-x64.zip,
+# _linux-x64.tar.gz, _osx-x64.tar.gz -- le zip Windows n'est pas executable
+# tel quel sous Linux/macOS (format PE, pas ELF/Mach-O). yt-dlp publie de
+# meme un binaire distinct par OS (yt-dlp.exe, yt-dlp_linux, yt-dlp_macos --
+# verifie dans le README du vrai depot). Sans distinguer la plateforme ici,
+# le script installait toujours le binaire Windows, meme sous Linux : il se
+# copiait bien (Get-ChildItem le trouvait dans l'archive), mais restait
+# introuvable ensuite (nomme *.exe, jamais executable) sans qu'aucune
+# erreur ne le signale.
+$sockPattern = if ($IsWindows) { '*win-x64.zip' } elseif ($IsMacOS) { '*osx-x64.tar.gz' } else { '*linux-x64.tar.gz' }
+$sockName    = if ($IsWindows) { 'sockseek.exe' } else { 'sockseek' }
+$ytPattern   = if ($IsWindows) { 'yt-dlp.exe' } elseif ($IsMacOS) { 'yt-dlp_macos' } else { 'yt-dlp_linux' }
+$ytName      = if ($IsWindows) { 'yt-dlp.exe' } else { 'yt-dlp' }
+
+function Expand-InstallArchive {
+    <# Expand-Archive ne sait pas lire un .tar.gz : `tar`, present sur
+       a peu pres tout Linux/macOS moderne, s'en charge a sa place. #>
+    param([string] $ArchivePath, [string] $DestinationPath)
+    if ($ArchivePath -match '\.tar\.gz$|\.tgz$') {
+        & tar -xzf $ArchivePath -C $DestinationPath
+        if ($LASTEXITCODE -ne 0) { throw "echec de 'tar' sur $ArchivePath (code $LASTEXITCODE)." }
+    }
+    else {
+        Expand-Archive -Path $ArchivePath -DestinationPath $DestinationPath -Force
+    }
+}
+
 # ---------------------------------------------------------------- sockseek --
 Write-Step "sockseek"
-$sockExe = Join-Path $InstallDir 'sockseek.exe'
+$sockExe = Join-Path $InstallDir $sockName
 
 if ((Test-Path $sockExe) -and -not $Force) {
     Write-Info "Deja present. -Force pour reinstaller."
@@ -178,65 +206,95 @@ else {
     $asset = if ($SockseekUrl) {
         [pscustomobject]@{ Version = 'fournie'; Name = Split-Path $SockseekUrl -Leaf; Url = $SockseekUrl }
     } else {
-        Get-LatestAsset -Repo 'fiso64/sockseek' -Pattern '*win-x64.zip'
+        Get-LatestAsset -Repo 'fiso64/sockseek' -Pattern $sockPattern
     }
     Write-Info "Version $($asset.Version) : $($asset.Name)"
 
-    $zip = Join-Path $tmp $asset.Name
-    Invoke-WebRequest -Uri $asset.Url -OutFile $zip -TimeoutSec 300
-    Expand-Archive -Path $zip -DestinationPath $tmp -Force
+    $archive = Join-Path $tmp $asset.Name
+    Invoke-WebRequest -Uri $asset.Url -OutFile $archive -TimeoutSec 300
+
+    # Extrait dans un sous-dossier dedie, pas directement dans $tmp : sinon
+    # l'archive elle-meme (qui y reste) se ferait copier avec le binaire par
+    # le Copy-Item plus bas -- constate en le reproduisant (l'archive de
+    # ~50 Mo se retrouvait dans le dossier d'installation final).
+    $extractDir = Join-Path $tmp 'sockseek-extract'
+    New-Item -ItemType Directory -Path $extractDir -Force | Out-Null
+    Expand-InstallArchive -ArchivePath $archive -DestinationPath $extractDir
 
     # L'archive peut contenir le binaire a la racine ou dans un sous-dossier.
-    $found = Get-ChildItem -Path $tmp -Recurse -File -Include 'sockseek.exe', 'sldl.exe' |
+    $found = Get-ChildItem -Path $extractDir -Recurse -File -Include 'sockseek.exe', 'sockseek', 'sldl.exe' |
              Select-Object -First 1
     if (-not $found) { throw "Binaire introuvable dans l'archive $($asset.Name)." }
 
     Copy-Item -Path (Join-Path $found.Directory.FullName '*') -Destination $InstallDir `
               -Recurse -Force
     if (-not (Test-Path $sockExe)) {
-        # release anterieure au renommage
+        # release anterieure au renommage (sldl.exe, Windows uniquement)
         $old = Join-Path $InstallDir 'sldl.exe'
         if (Test-Path $old) { Rename-Item $old $sockExe -Force }
+    }
+    if (-not $IsWindows) {
+        & chmod +x $sockExe
     }
     Write-Ok "Installe : $sockExe"
 }
 
 # ------------------------------------------------------------------ yt-dlp --
 Write-Step "yt-dlp"
-$ytExe = Join-Path $InstallDir 'yt-dlp.exe'
+$ytExe = Join-Path $InstallDir $ytName
 
 if ((Test-Path $ytExe) -and -not $Force) {
     Write-Info "Deja present. -Force pour reinstaller."
 }
 else {
     $asset = if ($YtDlpUrl) {
-        [pscustomobject]@{ Version = 'fournie'; Name = 'yt-dlp.exe'; Url = $YtDlpUrl }
+        [pscustomobject]@{ Version = 'fournie'; Name = $ytName; Url = $YtDlpUrl }
     } else {
-        Get-LatestAsset -Repo 'yt-dlp/yt-dlp' -Pattern 'yt-dlp.exe'
+        Get-LatestAsset -Repo 'yt-dlp/yt-dlp' -Pattern $ytPattern
     }
     Write-Info "Version $($asset.Version)"
     Invoke-WebRequest -Uri $asset.Url -OutFile $ytExe -TimeoutSec 300
+    if (-not $IsWindows) {
+        & chmod +x $ytExe
+    }
     Write-Ok "Installe : $ytExe"
 }
 
 # -------------------------------------------------------------------- PATH --
 Write-Step "PATH utilisateur"
-$userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
-if ($userPath -split ';' -contains $InstallDir) {
-    Write-Info "Deja present."
+if ($IsWindows) {
+    # [Environment]::GetEnvironmentVariable(..., 'User') persiste dans le
+    # registre Windows : concept propre a Windows, sans equivalent direct
+    # sous Linux/macOS (voir plus bas).
+    $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+    if ($userPath -split ';' -contains $InstallDir) {
+        Write-Info "Deja present."
+    }
+    else {
+        $newPath = ($userPath.TrimEnd(';') + ';' + $InstallDir).TrimStart(';')
+        [Environment]::SetEnvironmentVariable('Path', $newPath, 'User')
+        Write-Ok "Ajoute. Les nouveaux terminaux le verront."
+    }
 }
 else {
-    $newPath = ($userPath.TrimEnd(';') + ';' + $InstallDir).TrimStart(';')
-    [Environment]::SetEnvironmentVariable('Path', $newPath, 'User')
-    Write-Ok "Ajoute. Les nouveaux terminaux le verront."
+    # Pas de registre ici : le PATH persistant se regle dans le profil du
+    # shell (~/.bashrc, ~/.zshrc, ...), specifique a chacun -- on se contente
+    # donc de l'indiquer plutot que de modifier un fichier a l'aveugle.
+    Write-Info "Ajoute uniquement a cette session (pas de registre sous Linux/macOS)."
+    Write-Info "Pour le rendre permanent, ajoute a ton profil de shell :"
+    Write-Info "  export PATH=`"$InstallDir`:`$PATH`""
 }
-# rend les binaires utilisables dans la session courante
-$env:Path = $env:Path.TrimEnd(';') + ';' + $InstallDir
+# rend les binaires utilisables dans la session courante, sur toutes les
+# plateformes -- $env:PATH (majuscules) : les variables d'environnement sont
+# sensibles a la casse sous Linux/macOS, contrairement a Windows ; $env:Path
+# y resterait $null (constate en le reproduisant).
+$sep = [IO.Path]::PathSeparator
+$env:PATH = "$($env:PATH.TrimEnd($sep))$sep$InstallDir"
 
 # ----------------------------------------------------------- configuration --
 Write-Step "Configuration"
-$confDir  = Join-Path $env:APPDATA 'sockseek'
-$confFile = Join-Path $confDir 'sockseek.conf'
+$confDir  = Get-SockseekConfigDir
+$confFile = Get-SockseekConfPath
 
 if ($SkipCredentials) {
     Write-Info "-SkipCredentials : ni prompt, ni ecriture de sockseek.conf."
