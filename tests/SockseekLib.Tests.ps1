@@ -340,13 +340,19 @@ Describe 'Import-PlaylistFolder' {
     <#
     Rend gerable un dossier de telechargement jamais enregistre dans le
     catalogue (deplace a la main, telecharge avant l'introduction du
-    catalogue centralise, etc.) sans jamais relancer d'extraction.
+    catalogue centralise, etc.) sans jamais relancer d'extraction -- et le
+    deplace vers le dossier de destination par defaut pour recentraliser
+    des telechargements eparpilles. $sourcesDir simule ces emplacements
+    eparpilles, $centralDir le dossier de destination configure.
     #>
     BeforeAll {
         $script:catTestDir = Join-Path ([IO.Path]::GetTempPath()) "sockseek-import-$([guid]::NewGuid().Guid.Substring(0,8))"
-        New-Item -ItemType Directory -Path $catTestDir -Force | Out-Null
+        $script:sourcesDir = Join-Path $catTestDir 'sources'
+        $script:centralDir = Join-Path $catTestDir 'centralized'
+        New-Item -ItemType Directory -Path $sourcesDir -Force | Out-Null
         $script:savedAppData2 = $env:APPDATA
         $env:APPDATA = $catTestDir
+        Set-DefaultOutputDir -OutputDir $centralDir
     }
 
     AfterAll {
@@ -355,17 +361,19 @@ Describe 'Import-PlaylistFolder' {
     }
 
     It "leve une erreur si le dossier n'existe pas" {
-        { Import-PlaylistFolder -FolderPath (Join-Path $catTestDir 'inexistant') } | Should -Throw
+        { Import-PlaylistFolder -FolderPath (Join-Path $sourcesDir 'inexistant') } | Should -Throw
     }
 
-    It "leve une erreur si le dossier ne contient ni index ni fichier audio" {
-        $empty = Join-Path $catTestDir 'vide'
+    It "leve une erreur si le dossier ne contient ni index ni fichier audio, sans rien deplacer" {
+        $empty = Join-Path $sourcesDir 'vide'
         New-Item -ItemType Directory -Path $empty -Force | Out-Null
         { Import-PlaylistFolder -FolderPath $empty } | Should -Throw
+        Test-Path -LiteralPath $empty | Should -BeTrue
+        Test-Path -LiteralPath (Join-Path $centralDir 'vide') | Should -BeFalse
     }
 
-    It 'enregistre un dossier avec _index.csv dans le catalogue, avec le bon compte' {
-        $folder = Join-Path $catTestDir 'Ma Playlist'
+    It 'enregistre un dossier avec _index.csv dans le catalogue, avec le bon compte, et le deplace vers la destination par defaut' {
+        $folder = Join-Path $sourcesDir 'Ma Playlist'
         New-Item -ItemType Directory -Path $folder -Force | Out-Null
         New-Item -ItemType File -Path (Join-Path $folder 'Artist - Ok.mp3') -Force | Out-Null
         @'
@@ -379,6 +387,10 @@ Artist - Ok.mp3,Artist,,Ok,300,0,1,0
         $imported.Ok | Should -Be 1
         $imported.Manquants | Should -Be 1
         $imported.Name | Should -Be 'Ma Playlist'
+        $imported.OutputDir | Should -Be (Resolve-Path -LiteralPath (Join-Path $centralDir 'Ma Playlist')).Path
+
+        Test-Path -LiteralPath $folder | Should -BeFalse
+        Test-Path -LiteralPath (Join-Path $centralDir 'Ma Playlist\Artist - Ok.mp3') | Should -BeTrue
 
         $entry = Read-Catalogue | Where-Object { $_.Name -eq 'Ma Playlist' }
         $entry | Should -Not -BeNullOrEmpty
@@ -386,33 +398,108 @@ Artist - Ok.mp3,Artist,,Ok,300,0,1,0
         $entry.Ok | Should -Be 1
     }
 
-    It 'reimporter le meme dossier met a jour l entree plutot que d en creer une seconde' {
-        $folder = Join-Path $catTestDir 'Ma Playlist'
-        Import-PlaylistFolder -FolderPath $folder | Out-Null
+    It 'reimporter depuis le nouvel emplacement (deja centralise) met a jour l entree sans la dupliquer' {
+        $already = Join-Path $centralDir 'Ma Playlist'
         $before = @(Read-Catalogue).Count
 
-        Import-PlaylistFolder -FolderPath $folder | Out-Null
+        Import-PlaylistFolder -FolderPath $already | Out-Null
         $after = @(Read-Catalogue).Count
 
         $after | Should -Be $before
+        Test-Path -LiteralPath $already | Should -BeTrue
     }
 
     It 'detecte aussi un dossier sans index mais avec des fichiers audio (balayage du disque)' {
-        $folder = Join-Path $catTestDir 'Sans Index'
+        $folder = Join-Path $sourcesDir 'Sans Index'
         New-Item -ItemType Directory -Path $folder -Force | Out-Null
         New-Item -ItemType File -Path (Join-Path $folder 'Un Titre.flac') -Force | Out-Null
 
         $imported = Import-PlaylistFolder -FolderPath $folder
         $imported.Total | Should -Be 1
         $imported.Ok | Should -Be 1
+        Test-Path -LiteralPath (Join-Path $centralDir 'Sans Index\Un Titre.flac') | Should -BeTrue
     }
 
-    It 'utilise le nom fourni plutot que le nom du dossier' {
-        $folder = Join-Path $catTestDir 'Nom Personnalise'
+    It 'utilise le nom fourni plutot que le nom du dossier pour le nommer ET pour le dossier de destination' {
+        $folder = Join-Path $sourcesDir 'Nom Original'
         New-Item -ItemType Directory -Path $folder -Force | Out-Null
         New-Item -ItemType File -Path (Join-Path $folder 'Un Titre.flac') -Force | Out-Null
 
         $imported = Import-PlaylistFolder -FolderPath $folder -Name 'Nom choisi'
         $imported.Name | Should -Be 'Nom choisi'
+        Test-Path -LiteralPath (Join-Path $centralDir 'Nom choisi\Un Titre.flac') | Should -BeTrue
+    }
+
+    It 'fusionne sans ecraser quand un dossier du meme nom existe deja a destination' {
+        $preexisting = Join-Path $centralDir 'Fusion Test'
+        New-Item -ItemType Directory -Path $preexisting -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $preexisting 'A.mp3') -Value 'central-version' -Encoding utf8NoBOM
+        Set-Content -LiteralPath (Join-Path $preexisting 'B.flac') -Value 'central-version' -Encoding utf8NoBOM
+
+        $incoming = Join-Path $sourcesDir 'Fusion Test'
+        New-Item -ItemType Directory -Path $incoming -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $incoming 'A.mp3') -Value 'incoming-conflicting-version' -Encoding utf8NoBOM
+        Set-Content -LiteralPath (Join-Path $incoming 'C.flac') -Value 'incoming-new-file' -Encoding utf8NoBOM
+
+        Import-PlaylistFolder -FolderPath $incoming -Name 'Fusion Test' | Out-Null
+
+        # Le fichier deja present a destination n'est jamais ecrase.
+        Get-Content -LiteralPath (Join-Path $preexisting 'A.mp3') -Raw | Should -Match 'central-version'
+        # Le fichier nouveau est bien remonte a destination.
+        Test-Path -LiteralPath (Join-Path $preexisting 'C.flac') | Should -BeTrue
+        # Le fichier en conflit reste a l'emplacement source, non perdu.
+        Test-Path -LiteralPath (Join-Path $incoming 'A.mp3') | Should -BeTrue
+        Get-Content -LiteralPath (Join-Path $incoming 'A.mp3') -Raw | Should -Match 'incoming-conflicting-version'
+        # Le fichier deplace, lui, ne reste pas en double a la source.
+        Test-Path -LiteralPath (Join-Path $incoming 'C.flac') | Should -BeFalse
+    }
+}
+
+Describe 'Remove-CatalogueEntry' {
+    BeforeAll {
+        $script:remTestDir = Join-Path ([IO.Path]::GetTempPath()) "sockseek-remove-$([guid]::NewGuid().Guid.Substring(0,8))"
+        New-Item -ItemType Directory -Path $remTestDir -Force | Out-Null
+        $script:savedAppData3 = $env:APPDATA
+        $env:APPDATA = $remTestDir
+        Set-DefaultOutputDir -OutputDir (Join-Path $remTestDir 'central')
+
+        # Definie ici (phase Run) plutot qu'au niveau du Describe (phase
+        # Discovery, non partagee avec les blocs It sous Pester 5/6).
+        function script:New-FakePlaylistFolder {
+            param([string] $Name)
+            $folder = Join-Path $remTestDir "src-$Name"
+            New-Item -ItemType Directory -Path $folder -Force | Out-Null
+            New-Item -ItemType File -Path (Join-Path $folder 'Titre.flac') -Force | Out-Null
+            return (Import-PlaylistFolder -FolderPath $folder -Name $Name)
+        }
+    }
+
+    AfterAll {
+        $env:APPDATA = $savedAppData3
+        Remove-Item -LiteralPath $remTestDir -Recurse -Force -ErrorAction SilentlyContinue
+    }
+
+    It "leve une erreur pour une URL absente du catalogue" {
+        { Remove-CatalogueEntry -Url 'local-import://inconnue' } | Should -Throw
+    }
+
+    It 'retire uniquement l entree du catalogue sans toucher aux fichiers par defaut' {
+        $imported = New-FakePlaylistFolder -Name 'Garder les fichiers'
+        $url = (Read-Catalogue | Where-Object { $_.Name -eq 'Garder les fichiers' }).Url
+
+        Remove-CatalogueEntry -Url $url | Out-Null
+
+        (Read-Catalogue | Where-Object { $_.Name -eq 'Garder les fichiers' }) | Should -BeNullOrEmpty
+        Test-Path -LiteralPath $imported.OutputDir | Should -BeTrue
+    }
+
+    It 'retire aussi les fichiers du disque avec -DeleteFiles' {
+        $imported = New-FakePlaylistFolder -Name 'Supprimer aussi'
+        $url = (Read-Catalogue | Where-Object { $_.Name -eq 'Supprimer aussi' }).Url
+
+        Remove-CatalogueEntry -Url $url -DeleteFiles | Out-Null
+
+        (Read-Catalogue | Where-Object { $_.Name -eq 'Supprimer aussi' }) | Should -BeNullOrEmpty
+        Test-Path -LiteralPath $imported.OutputDir | Should -BeFalse
     }
 }
