@@ -130,12 +130,20 @@ pwsh -File .\Install-Sockseek.ps1
 
 L'installateur enchaîne :
 
-1. Passe la politique d'exécution à `Unrestricted` pour l'utilisateur courant.
-2. Résout la dernière release de `fiso64/sockseek`, télécharge l'archive
-   `win-x64`, extrait le binaire vers `%LOCALAPPDATA%\sockseek`.
-3. Fait de même pour `yt-dlp.exe`.
-4. Ajoute le dossier au PATH utilisateur (pas machine : aucune élévation requise).
-5. Demande tes identifiants Soulseek et écrit `%APPDATA%\sockseek\sockseek.conf`.
+1. Passe la politique d'exécution à `Unrestricted` pour l'utilisateur courant
+   (Windows uniquement — sans effet ailleurs).
+2. Résout la dernière release de `fiso64/sockseek` pour la plateforme
+   courante (`win-x64`, `linux-x64` ou `osx-x64`), extrait le binaire vers
+   `%LOCALAPPDATA%\sockseek` (Windows) ou `~/.local/share/sockseek`
+   (Linux/macOS), et le rend exécutable (`chmod +x`) hors Windows.
+3. Fait de même pour `yt-dlp` (`yt-dlp.exe`, `yt-dlp_linux` ou `yt-dlp_macos`
+   selon la plateforme).
+4. Ajoute le dossier au PATH utilisateur (Windows : registre, aucune
+   élévation requise ; Linux/macOS : session courante seulement — le
+   script affiche la ligne à ajouter à ton profil de shell pour que ce soit
+   permanent).
+5. Demande tes identifiants Soulseek et écrit `sockseek.conf` (dans
+   `%APPDATA%\sockseek` sous Windows, `~/.config/sockseek` ailleurs).
 
 Options utiles :
 
