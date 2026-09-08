@@ -88,12 +88,21 @@ function psQuote(str) {
 // Une seule operation a la fois, exactement comme l'ancienne GUI WinForms
 // (Start-KitJob) : deux recherches Soulseek en parallele risqueraient un
 // bannissement de 30 minutes cote serveur Soulseek.
-let currentJob = null; // { proc, description, lines: [], done, exitCode, listeners: Set<res> }
+let currentJob = null; // { proc, description, lines: [], done, exitCode }
 
-function broadcast(job, event, data) {
+// Les navigateurs se connectent typiquement AVANT qu'un job existe (page
+// ouverte, rien encore lance) : un registre de listeners PAR job (comme la
+// premiere version le faisait) perd donc toute connexion deja ouverte des
+// qu'un nouveau job est cree, puisque ce nouveau job demarre avec un
+// ensemble de listeners vide -- constate concretement (aucun log ne
+// remontait a l'ecran lors d'un lancement depuis une page deja chargee).
+// Un registre global, independant du cycle de vie de chaque job, evite ca.
+const sseClients = new Set();
+
+function broadcast(event, data) {
     const payload = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
-    for (const res of job.listeners) {
-        res.write(payload);
+    for (const res of sseClients) {
+        try { res.write(payload); } catch (e) { /* client deconnecte : le prochain close() le retirera */ }
     }
 }
 
@@ -105,8 +114,9 @@ function startJob(scriptPath, args, description) {
     const spawnOpts = { cwd: REPO_ROOT, detached: process.platform !== 'win32' };
     const proc = spawn(PWSH, ['-NoProfile', '-NonInteractive', '-File', scriptPath, ...args], spawnOpts);
 
-    const job = { proc, description, lines: [], done: false, exitCode: null, listeners: new Set() };
+    const job = { proc, description, lines: [], done: false, exitCode: null };
     currentJob = job;
+    broadcast('start', { description });
 
     const onData = (d) => {
         const text = d.toString('utf8');
@@ -115,7 +125,7 @@ function startJob(scriptPath, args, description) {
             // eslint-disable-next-line no-control-regex
             const clean = line.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, ''); // codes ANSI (Write-Host -ForegroundColor)
             job.lines.push(clean);
-            broadcast(job, 'log', { line: clean });
+            broadcast('log', { line: clean });
         }
     };
     proc.stdout.on('data', onData);
@@ -124,13 +134,13 @@ function startJob(scriptPath, args, description) {
     proc.on('close', (code) => {
         job.done = true;
         job.exitCode = code;
-        broadcast(job, 'done', { code, description });
+        broadcast('done', { code, description });
     });
     proc.on('error', (e) => {
         job.done = true;
         job.exitCode = -1;
         job.lines.push(`[erreur] ${e.message}`);
-        broadcast(job, 'done', { code: -1, description, error: e.message });
+        broadcast('done', { code: -1, description, error: e.message });
     });
 
     return job;
@@ -534,15 +544,17 @@ route('GET', '/api/jobs/stream', async (req, res) => {
         if (currentJob.done) {
             res.write(`event: done\ndata: ${JSON.stringify({ code: currentJob.exitCode, description: currentJob.description })}\n\n`);
         }
-        else {
-            currentJob.listeners.add(res);
-        }
     }
+    // Ajoute a la liste globale dans tous les cas (job en cours, deja
+    // termine, ou pas encore demarre) : ainsi la prochaine operation lancee
+    // depuis cette meme page, meme si elle est arrivee bien avant, recevra
+    // quand meme le flux en direct.
+    sseClients.add(res);
 
     const keepAlive = setInterval(() => { try { res.write(': ping\n\n'); } catch (e) { /* client parti */ } }, 20000);
     req.on('close', () => {
         clearInterval(keepAlive);
-        if (currentJob) currentJob.listeners.delete(res);
+        sseClients.delete(res);
     });
 });
 
