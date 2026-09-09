@@ -2,152 +2,263 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Kit sockseek</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230f766e'/%3E%3Cpath d='M6 19V13M11 23V9M16 27V5M21 23V9M26 19V13' stroke='%23eafffb' stroke-width='2.6' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <header>
-  <h1>Kit sockseek</h1>
-  <nav>
-    <button data-tab="nouvelle" class="active">Nouvelle playlist</button>
-    <button data-tab="config">Configuration</button>
-    <button data-tab="playlists">Playlists</button>
-    <button data-tab="suivi">Suivi d'execution</button>
+  <div class="brand">
+    <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true">
+      <rect width="32" height="32" rx="7"/>
+      <path d="M6 19V13M11 23V9M16 27V5M21 23V9M26 19V13" stroke-width="2.6" stroke-linecap="round"/>
+    </svg>
+    <div class="brand-text">
+      <strong>Kit sockseek</strong>
+      <span>SoundCloud / YouTube &rarr; Soulseek</span>
+    </div>
+  </div>
+
+  <nav aria-label="Sections">
+    <button data-tab="nouvelle" class="active" type="button">
+      <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3v14M3 10h14" stroke-width="1.8" stroke-linecap="round"/></svg>
+      Nouvelle playlist
+    </button>
+    <button data-tab="config" type="button">
+      <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="2.6" stroke-width="1.6"/><path d="M10 2.5v2.1M10 15.4v2.1M17.5 10h-2.1M4.6 10H2.5M15.1 4.9l-1.5 1.5M6.4 13.6l-1.5 1.5M15.1 15.1l-1.5-1.5M6.4 6.4 4.9 4.9" stroke-width="1.5" stroke-linecap="round"/></svg>
+      Configuration
+    </button>
+    <button data-tab="playlists" type="button">
+      <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 5h14M3 10h14M3 15h9" stroke-width="1.8" stroke-linecap="round"/></svg>
+      Playlists
+    </button>
+    <button data-tab="suivi" type="button">
+      <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M2.5 11.5 6 8l3 5 3-9 2.5 7.5H17.5" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Suivi d'ex&eacute;cution
+    </button>
   </nav>
+
+  <div class="status-pill" id="global-status" data-state="idle">
+    <span class="status-dot"></span>
+    <span id="global-status-text">Pr&ecirc;t</span>
+  </div>
 </header>
 
 <main>
 
   <!-- ============================================== Nouvelle playlist === -->
   <section id="tab-nouvelle" class="tab active">
-    <fieldset>
-      <legend>Playlist</legend>
-      <div class="row">
-        <input id="new-url" class="grow" type="text" placeholder="URL SoundCloud ou YouTube">
+    <div class="card">
+      <div class="card-head">
+        <span class="eyebrow">&Eacute;tape 1</span>
+        <h2>Colle une playlist</h2>
+        <p class="hint">Une URL de set ou de playlist SoundCloud, ou une playlist YouTube.</p>
       </div>
-      <div class="row">
-        <label><input type="radio" name="mode" value="extract" checked> Extraire seulement (CSV, pas de recherche)</label>
-        <label><input type="radio" name="mode" value="test"> Tester (recherche Soulseek, sans telecharger)</label>
-        <label><input type="radio" name="mode" value="download"> Telecharger</label>
-      </div>
-      <div class="row">
-        <label>Cookies navigateur (sets prives) :
+      <div class="card-body">
+        <div class="field">
+          <label for="new-url">URL</label>
+          <input id="new-url" type="text" placeholder="https://soundcloud.com/artiste/sets/nom-du-set">
+        </div>
+
+        <div class="field">
+          <label>Traitement</label>
+          <div class="choice-group" role="radiogroup">
+            <label class="choice">
+              <input type="radio" name="mode" value="extract" checked>
+              <span class="choice-title">Extraire seulement</span>
+              <span class="choice-desc">CSV nettoy&eacute;, aucune recherche Soulseek</span>
+            </label>
+            <label class="choice">
+              <input type="radio" name="mode" value="test">
+              <span class="choice-title">Tester</span>
+              <span class="choice-desc">Recherche Soulseek, rien n'est t&eacute;l&eacute;charg&eacute;</span>
+            </label>
+            <label class="choice">
+              <input type="radio" name="mode" value="download">
+              <span class="choice-title">T&eacute;l&eacute;charger</span>
+              <span class="choice-desc">Recherche puis r&eacute;cup&eacute;ration pour de vrai</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="new-cookies">Cookies navigateur <span class="hint-inline">(sets priv&eacute;s / r&eacute;serv&eacute;s aux abonn&eacute;s)</span></label>
           <select id="new-cookies">
             <option value="">(aucun)</option>
             <option>brave</option><option>chrome</option><option>chromium</option>
             <option>edge</option><option>firefox</option><option>opera</option>
             <option>safari</option><option>vivaldi</option><option>whale</option>
           </select>
-        </label>
+        </div>
       </div>
-      <div class="row">
+      <div class="card-foot">
         <button class="primary" id="new-launch">Lancer</button>
       </div>
-    </fieldset>
+    </div>
   </section>
 
   <!-- =================================================== Configuration === -->
   <section id="tab-config" class="tab">
-    <fieldset>
-      <legend>Binaires (sockseek, yt-dlp)</legend>
-      <div id="bin-status" class="muted">Verification...</div>
-      <div class="row">
-        <button id="btn-install">Installer / mettre a jour</button>
-        <button id="btn-check-updates">Verifier les mises a jour</button>
-      </div>
-    </fieldset>
 
-    <fieldset>
-      <legend>Identifiants Soulseek</legend>
-      <div id="conf-status" class="muted">Verification...</div>
-      <div class="row">
-        <label>Pseudo <input id="conf-user" type="text"></label>
-        <label>Mot de passe <input id="conf-pass" type="password"></label>
-        <button id="btn-save-creds">Enregistrer</button>
+    <div class="card">
+      <div class="card-head">
+        <span class="eyebrow">Binaires</span>
+        <h2>sockseek &amp; yt-dlp</h2>
       </div>
-    </fieldset>
+      <div class="card-body">
+        <pre id="bin-status" class="status-block">V&eacute;rification...</pre>
+      </div>
+      <div class="card-foot">
+        <button class="primary" id="btn-install">Installer / mettre &agrave; jour</button>
+        <button id="btn-check-updates">V&eacute;rifier les mises &agrave; jour</button>
+      </div>
+    </div>
 
-    <fieldset>
-      <legend>Dossier de destination par defaut</legend>
-      <div class="row">
-        <input id="conf-dest" class="grow" type="text">
-        <button id="btn-browse-dest">Parcourir...</button>
-        <button id="btn-save-dest">Enregistrer</button>
+    <div class="card">
+      <div class="card-head">
+        <span class="eyebrow">Compte</span>
+        <h2>Identifiants Soulseek</h2>
+      </div>
+      <div class="card-body">
+        <p id="conf-status" class="hint">V&eacute;rification...</p>
+        <div class="field-row">
+          <div class="field">
+            <label for="conf-user">Pseudo</label>
+            <input id="conf-user" type="text" autocomplete="username">
+          </div>
+          <div class="field">
+            <label for="conf-pass">Mot de passe</label>
+            <input id="conf-pass" type="password" autocomplete="new-password">
+          </div>
+        </div>
+      </div>
+      <div class="card-foot">
+        <button class="primary" id="btn-save-creds">Enregistrer</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <span class="eyebrow">Stockage</span>
+        <h2>Dossier de destination par d&eacute;faut</h2>
+      </div>
+      <div class="card-body">
+        <div class="field">
+          <label for="conf-dest">Chemin</label>
+          <div class="input-with-actions">
+            <input id="conf-dest" type="text">
+            <button id="btn-browse-dest">Parcourir&hellip;</button>
+          </div>
+        </div>
+      </div>
+      <div class="card-foot">
+        <button class="primary" id="btn-save-dest">Enregistrer</button>
         <button id="btn-open-dest">Ouvrir l'explorateur</button>
       </div>
-    </fieldset>
+    </div>
 
-    <fieldset>
-      <legend>Importer un dossier de telechargement existant</legend>
-      <p class="muted">
-        Un dossier deja present sur le disque (deplace a la main, ou telecharge avant
-        l'existence du catalogue) mais absent de l'onglet Playlists : cherche son index, le
-        deplace vers le dossier de destination par defaut ci-dessus (fusionne sans rien
-        ecraser si un dossier du meme nom y existe deja), et l'enregistre -- sans rien
-        retelecharger.
-      </p>
-      <div class="row">
-        <input id="import-path" class="grow" type="text" placeholder="Chemin du dossier">
-        <button id="btn-browse-import">Parcourir...</button>
+    <div class="card">
+      <div class="card-head">
+        <span class="eyebrow">Reprise</span>
+        <h2>Importer un dossier existant</h2>
+        <p class="hint">
+          Un dossier d&eacute;j&agrave; sur le disque (d&eacute;plac&eacute; &agrave; la main, ou t&eacute;l&eacute;charg&eacute; avant
+          l'existence du catalogue) mais absent de l'onglet Playlists&nbsp;: retrouve son index, le
+          d&eacute;place vers la destination par d&eacute;faut ci-dessus (fusionne sans rien &eacute;craser si un
+          dossier du m&ecirc;me nom y existe d&eacute;j&agrave;), et l'enregistre &mdash; sans rien retelecharger.
+        </p>
       </div>
-      <div class="row">
-        <input id="import-name" type="text" placeholder="Nom (optionnel)">
-        <button id="btn-import" class="primary">Importer</button>
+      <div class="card-body">
+        <div class="field">
+          <label for="import-path">Dossier &agrave; importer</label>
+          <div class="input-with-actions">
+            <input id="import-path" type="text" placeholder="/chemin/vers/le/dossier">
+            <button id="btn-browse-import">Parcourir&hellip;</button>
+          </div>
+        </div>
+        <div class="field">
+          <label for="import-name">Nom <span class="hint-inline">(optionnel)</span></label>
+          <input id="import-name" type="text" placeholder="Par d&eacute;faut : nom du dossier">
+        </div>
       </div>
-    </fieldset>
+      <div class="card-foot">
+        <button class="primary" id="btn-import">Importer</button>
+      </div>
+    </div>
   </section>
 
   <!-- ======================================================= Playlists === -->
   <section id="tab-playlists" class="tab">
-    <div class="row">
-      <input id="pl-search" class="grow" type="text" placeholder="Rechercher...">
-      <span id="pl-info" class="muted"></span>
-    </div>
-    <table id="pl-table">
-      <thead><tr>
-        <th>Playlist</th><th>Manquants</th><th>Recuperes</th><th>Runs</th><th>Dernier essai</th><th>Dossier</th>
-      </tr></thead>
-      <tbody></tbody>
-    </table>
-    <div class="row">
-      <button id="btn-refresh-playlists">Actualiser la liste</button>
-      <button id="btn-resume-all">Reprendre tout, toutes playlists confondues</button>
-      <button id="btn-test-selected">Tester la playlist selectionnee</button>
-      <button id="btn-resume-selected">Reprendre la playlist selectionnee</button>
-      <button id="btn-delete-selected">Supprimer la playlist selectionnee</button>
+    <div class="card">
+      <div class="toolbar">
+        <input id="pl-search" type="search" placeholder="Rechercher une playlist&hellip;">
+        <span id="pl-info" class="hint"></span>
+        <span class="spacer"></span>
+        <button id="btn-refresh-playlists">Actualiser</button>
+      </div>
+      <div class="table-scroll">
+        <table id="pl-table">
+          <thead><tr>
+            <th>Playlist</th><th>Manquants</th><th>R&eacute;cup&eacute;r&eacute;s</th><th>Runs</th><th>Dernier essai</th><th>Dossier</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="card-foot">
+        <button id="btn-resume-all">Reprendre tout</button>
+        <button id="btn-test-selected">Tester la s&eacute;lection</button>
+        <button id="btn-resume-selected">Reprendre la s&eacute;lection</button>
+        <button class="danger" id="btn-delete-selected">Supprimer la s&eacute;lection</button>
+      </div>
     </div>
 
-    <fieldset>
-      <legend id="pl-detail-title">Selectionne une playlist ci-dessus pour voir le detail de son dernier run.</legend>
-      <div class="row">
+    <div class="card">
+      <div class="card-head">
+        <h2 id="pl-detail-title">S&eacute;lectionne une playlist ci-dessus pour voir le d&eacute;tail de son dernier run.</h2>
+      </div>
+      <div class="table-scroll">
+        <table id="pl-detail-table"><thead><tr></tr></thead><tbody></tbody></table>
+      </div>
+      <div class="card-foot">
         <button id="btn-open-log" disabled>Ouvrir le journal</button>
         <button id="btn-open-folder" disabled>Ouvrir le dossier</button>
       </div>
-      <table id="pl-detail-table"><thead><tr></tr></thead><tbody></tbody></table>
-    </fieldset>
+    </div>
   </section>
 
   <!-- ================================================ Suivi d'execution === -->
   <section id="tab-suivi" class="tab">
-    <div class="row">
-      <span id="suivi-status" class="status-line">Pret. Rien n'a encore ete lance.</span>
-      <button id="btn-stop-job" disabled>Arreter l'operation en cours</button>
+    <div class="card console-card">
+      <div class="toolbar">
+        <span id="suivi-status" class="status-line">Pr&ecirc;t. Rien n'a encore &eacute;t&eacute; lanc&eacute;.</span>
+        <span class="spacer"></span>
+        <button class="danger" id="btn-stop-job" disabled>Arr&ecirc;ter l'op&eacute;ration</button>
+      </div>
+      <div class="console-chrome">
+        <span class="console-dot r"></span><span class="console-dot y"></span><span class="console-dot g"></span>
+        <span class="console-title">journal</span>
+      </div>
+      <div id="log" aria-live="polite"></div>
     </div>
-    <div id="log"></div>
   </section>
 
 </main>
 
 <div id="modal-backdrop" class="modal-backdrop" hidden>
   <div class="modal">
-    <div class="row">
+    <div class="modal-head">
       <strong id="modal-path" class="grow"></strong>
     </div>
     <div class="list" id="modal-list"></div>
-    <div class="row">
+    <div class="modal-foot">
       <button id="modal-up">Dossier parent</button>
-      <button id="modal-choose" class="primary">Choisir ce dossier</button>
+      <span class="spacer"></span>
       <button id="modal-cancel">Annuler</button>
+      <button id="modal-choose" class="primary">Choisir ce dossier</button>
     </div>
   </div>
 </div>

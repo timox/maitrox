@@ -82,7 +82,7 @@ async function main() {
     step('yt-dlp');
     const ytExe = await installBinary({
         repo: 'yt-dlp/yt-dlp', pattern: ytPattern, name: ytName,
-        installDir, force, explicitUrl: ytDlpUrl, log: info,
+        installDir, force, explicitUrl: ytDlpUrl, archive: false, log: info,
     });
 
     step('PATH');
