@@ -13,8 +13,8 @@ echo le lendemain : il suffit que le pair qui le partage se reconnecte.
 echo Cette reprise repasse sur tout ce qui manque, en une seule fois.
 echo.
 
-call :FindPwsh
-if errorlevel 1 goto NoPwsh
+where node >nul 2>nul
+if errorlevel 1 goto NoNode
 
 echo Que veux-tu faire ?
 echo.
@@ -36,7 +36,7 @@ echo.
 echo ----------------------------------------------------------------
 echo.
 
-"%PWSH%" -NoProfile -ExecutionPolicy Bypass -File "%~dp0Resume-Downloads.ps1" %MODE%
+node "%~dp0bin\resume.js" %MODE%
 set CODE=%ERRORLEVEL%
 
 echo.
@@ -56,29 +56,11 @@ pause
 exit /b 1
 
 
-:FindPwsh
-for /f "delims=" %%P in ('where pwsh.exe 2^>nul') do (
-    set "PWSH=%%P"
-    exit /b 0
-)
-if exist "%ProgramFiles%\PowerShell\7\pwsh.exe" (
-    set "PWSH=%ProgramFiles%\PowerShell\7\pwsh.exe"
-    exit /b 0
-)
-if exist "%ProgramFiles(x86)%\PowerShell\7\pwsh.exe" (
-    set "PWSH=%ProgramFiles(x86)%\PowerShell\7\pwsh.exe"
-    exit /b 0
-)
-if exist "%LOCALAPPDATA%\Microsoft\PowerShell\7\pwsh.exe" (
-    set "PWSH=%LOCALAPPDATA%\Microsoft\PowerShell\7\pwsh.exe"
-    exit /b 0
-)
-exit /b 1
-
-
-:NoPwsh
+:NoNode
 echo.
-echo   PowerShell 7 est introuvable. Lance d'abord installer.bat.
+echo   Node.js est introuvable dans le PATH.
+echo.
+echo   Installe-le depuis https://nodejs.org/ puis relance ce fichier.
 echo.
 pause
 exit /b 1

@@ -2,87 +2,38 @@
 'use strict';
 
 // Serveur web du kit sockseek : remplace l'ancienne interface WinForms
-// (Show-Gui.ps1), qui ne pouvait tourner que sous Windows (System.Windows.Forms
-// n'existe pas dans PowerShell 7 sur Linux). Ce serveur, lui, est du Node.js
-// pur (aucune dependance a installer) : il tourne pareil sous Windows et
-// Linux, et sert une page web consultee dans n'importe quel navigateur.
+// (Show-Gui.ps1), qui ne pouvait tourner que sous Windows. Ce serveur est
+// du Node.js pur (aucune dependance a installer) : il tourne pareil sous
+// Windows et Linux, et sert une page web consultee dans n'importe quel
+// navigateur.
 //
 // Toute la logique metier (nettoyage des titres, lecture/ecriture du
-// catalogue, invocation de sockseek/yt-dlp) reste dans les scripts
-// PowerShell existants (SockseekLib.ps1 et les .ps1 a la racine) : ce
-// serveur les invoque (spawn pour les actions longues, ou un court script
-// PowerShell qui renvoie du JSON pour les lectures/ecritures ponctuelles)
-// plutot que de reimplementer cette logique en JavaScript -- une seule
-// source de verite, deja testee (tests/SockseekLib.Tests.ps1).
+// catalogue, invocation de sockseek/yt-dlp) vit dans lib/ (portage Node de
+// l'ancien SockseekLib.ps1) : ce serveur l'appelle directement pour les
+// lectures/ecritures ponctuelles, et lance les scripts de bin/ dans un
+// sous-processus node pour les actions longues (extraction, telechargement,
+// installation) -- une seule source de verite, testee dans tests/.
 
 const http = require('http');
 const https = require('https');
 const fs = require('fs');
 const path = require('path');
 const { spawn, execFile } = require('child_process');
-const crypto = require('crypto');
 
 const REPO_ROOT = path.resolve(__dirname, '..');
 const PUBLIC_DIR = path.join(__dirname, 'public');
-const PWSH = process.platform === 'win32' ? 'pwsh.exe' : 'pwsh';
 const PORT = process.env.SOCKSEEK_WEBGUI_PORT ? Number(process.env.SOCKSEEK_WEBGUI_PORT) : 8342;
 
-const LIB_PATH = path.join(REPO_ROOT, 'SockseekLib.ps1');
+const { getDefaultOutputDir, setDefaultOutputDir, setSockseekCredentials, getSockseekConfPath } = require('../lib/paths');
+const { readCatalogue, getPlaylistPending, importPlaylistFolder, removeCatalogueEntry } = require('../lib/catalogue');
+const { parseCsv } = require('../lib/csv');
+const { findBinary } = require('../lib/findBinary');
+
 const SCRIPTS = {
-    extract: path.join(REPO_ROOT, 'Get-SoulseekList.ps1'),
-    resume: path.join(REPO_ROOT, 'Resume-Downloads.ps1'),
-    install: path.join(REPO_ROOT, 'Install-Sockseek.ps1'),
+    extract: path.join(REPO_ROOT, 'bin', 'extract.js'),
+    resume: path.join(REPO_ROOT, 'bin', 'resume.js'),
+    install: path.join(REPO_ROOT, 'bin', 'install.js'),
 };
-
-// ============================================================ pwsh helpers =
-
-function encodeCommand(script) {
-    // -EncodedCommand evite tout probleme d'echappement (guillemets,
-    // variables, retours a la ligne) en passant le script en Base64 --
-    // bien plus robuste que de construire une chaine -Command depuis Node.
-    return Buffer.from(script, 'utf16le').toString('base64');
-}
-
-/** Lance un court script PowerShell qui affiche un objet JSON sur sa sortie
- *  standard, et resout avec l'objet parse. Le script recoit deja SockseekLib.ps1
- *  dot-source (variable $Lib) et doit encapsuler ses erreurs dans un objet
- *  {"error": "..."} plutot que de planter, sans quoi le code de sortie/stderr
- *  sert de repli pour le message d'erreur. */
-function runPwshJson(scriptBody) {
-    return new Promise((resolve, reject) => {
-        const full = `$ErrorActionPreference = 'Stop'\n[Console]::OutputEncoding = [Text.Encoding]::UTF8\n. '${LIB_PATH.replace(/'/g, "''")}'\n${scriptBody}`;
-        const child = spawn(PWSH, ['-NoProfile', '-NonInteractive', '-EncodedCommand', encodeCommand(full)], {
-            cwd: REPO_ROOT,
-        });
-        let out = '';
-        let err = '';
-        child.stdout.on('data', (d) => { out += d.toString('utf8'); });
-        child.stderr.on('data', (d) => { err += d.toString('utf8'); });
-        child.on('error', reject);
-        child.on('close', (code) => {
-            const trimmed = out.trim();
-            if (!trimmed) {
-                reject(new Error(err.trim() || `pwsh a quitte avec le code ${code} sans sortie.`));
-                return;
-            }
-            try {
-                const parsed = JSON.parse(trimmed);
-                if (parsed && typeof parsed === 'object' && parsed.error) {
-                    reject(new Error(parsed.error));
-                    return;
-                }
-                resolve(parsed);
-            }
-            catch (e) {
-                reject(new Error(`Reponse illisible de pwsh : ${trimmed.slice(0, 500)}`));
-            }
-        });
-    });
-}
-
-function psQuote(str) {
-    return `'${String(str).replace(/'/g, "''")}'`;
-}
 
 // ================================================================= jobs ====
 // Une seule operation a la fois, exactement comme l'ancienne GUI WinForms
@@ -91,12 +42,9 @@ function psQuote(str) {
 let currentJob = null; // { proc, description, lines: [], done, exitCode }
 
 // Les navigateurs se connectent typiquement AVANT qu'un job existe (page
-// ouverte, rien encore lance) : un registre de listeners PAR job (comme la
-// premiere version le faisait) perd donc toute connexion deja ouverte des
-// qu'un nouveau job est cree, puisque ce nouveau job demarre avec un
-// ensemble de listeners vide -- constate concretement (aucun log ne
-// remontait a l'ecran lors d'un lancement depuis une page deja chargee).
-// Un registre global, independant du cycle de vie de chaque job, evite ca.
+// ouverte, rien encore lance) : un registre de listeners PAR job perd donc
+// toute connexion deja ouverte des qu'un nouveau job est cree. Un registre
+// global, independant du cycle de vie de chaque job, evite ca.
 const sseClients = new Set();
 
 function broadcast(event, data) {
@@ -112,7 +60,7 @@ function startJob(scriptPath, args, description) {
     }
 
     const spawnOpts = { cwd: REPO_ROOT, detached: process.platform !== 'win32' };
-    const proc = spawn(PWSH, ['-NoProfile', '-NonInteractive', '-File', scriptPath, ...args], spawnOpts);
+    const proc = spawn(process.execPath, [scriptPath, ...args], spawnOpts);
 
     const job = { proc, description, lines: [], done: false, exitCode: null };
     currentJob = job;
@@ -123,7 +71,7 @@ function startJob(scriptPath, args, description) {
         for (const line of text.split(/\r?\n/)) {
             if (line.length === 0) continue;
             // eslint-disable-next-line no-control-regex
-            const clean = line.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, ''); // codes ANSI (Write-Host -ForegroundColor)
+            const clean = line.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, ''); // codes ANSI
             job.lines.push(clean);
             broadcast('log', { line: clean });
         }
@@ -154,8 +102,8 @@ function killCurrentJob() {
     }
     else {
         // proc a ete lance "detached" (chef de son propre groupe de
-        // processus) : cibler -pid tue tout l'arbre (pwsh + sockseek/yt-dlp
-        // qu'il a lances), pas seulement pwsh lui-meme.
+        // processus) : cibler -pid tue tout l'arbre (node + sockseek/yt-dlp
+        // qu'il a lances), pas seulement le sous-processus node lui-meme.
         try { process.kill(-proc.pid, 'SIGKILL'); }
         catch (e) { try { proc.kill('SIGKILL'); } catch (e2) { /* deja mort */ } }
     }
@@ -214,42 +162,6 @@ function getInstalledVersion(exePath) {
     });
 }
 
-function findOnPath(names) {
-    const pathEnv = process.env.PATH || '';
-    const exts = process.platform === 'win32' ? ['.exe', '.cmd', '.bat', ''] : [''];
-    const dirs = pathEnv.split(path.delimiter).filter(Boolean);
-    for (const name of names) {
-        for (const dir of dirs) {
-            for (const ext of exts) {
-                const candidate = path.join(dir, name + ext);
-                try {
-                    if (fs.statSync(candidate).isFile()) return candidate;
-                }
-                catch (e) { /* absent ici, on continue */ }
-            }
-        }
-    }
-    return null;
-}
-
-function defaultInstallDir() {
-    if (process.platform === 'win32' && process.env.LOCALAPPDATA) {
-        return path.join(process.env.LOCALAPPDATA, 'sockseek');
-    }
-    return path.join(require('os').homedir(), '.local', 'share', 'sockseek');
-}
-
-async function findBinary(names) {
-    let found = findOnPath(names);
-    if (found) return found;
-    const dir = defaultInstallDir();
-    for (const name of names) {
-        const candidate = path.join(dir, process.platform === 'win32' ? `${name}.exe` : name);
-        try { if (fs.statSync(candidate).isFile()) return candidate; } catch (e) { /* absent */ }
-    }
-    return null;
-}
-
 // ---------------------------------------------------------------- routes ---
 
 const routes = [];
@@ -263,9 +175,7 @@ route('GET', '/api/status', async (req, res) => {
         getInstalledVersion(ytPath),
     ]);
     let defaultOutputDir = null;
-    try {
-        defaultOutputDir = await runPwshJson('Get-DefaultOutputDir | ConvertTo-Json');
-    } catch (e) { /* affiche quand meme le reste du statut */ }
+    try { defaultOutputDir = getDefaultOutputDir(); } catch (e) { /* affiche quand meme le reste du statut */ }
 
     sendJson(res, 200, {
         sockseek: { found: !!sockPath, path: sockPath, version: sockVersion },
@@ -303,23 +213,12 @@ route('GET', '/api/updates', async (req, res) => {
 
 route('GET', '/api/config', async (req, res) => {
     try {
-        const data = await runPwshJson(`
-try {
-    $confPath = Get-SockseekConfPath
-    if (-not (Test-Path -LiteralPath $confPath)) {
-        [pscustomobject]@{ hasConf = $false } | ConvertTo-Json
-    }
-    else {
-        $userLine = Get-Content -LiteralPath $confPath -Encoding utf8 -ErrorAction SilentlyContinue |
-                    Where-Object { $_ -match '^\\s*username\\s*=' } | Select-Object -First 1
-        $user = $null
-        if ($userLine -and $userLine -match '^\\s*username\\s*=\\s*(.+?)\\s*$') { $user = $matches[1] }
-        [pscustomobject]@{ hasConf = $true; username = $user } | ConvertTo-Json
-    }
-}
-catch { [pscustomobject]@{ error = $_.Exception.Message } | ConvertTo-Json }
-`);
-        sendJson(res, 200, data);
+        const confPath = getSockseekConfPath();
+        if (!fs.existsSync(confPath)) { sendJson(res, 200, { hasConf: false }); return; }
+        const lines = fs.readFileSync(confPath, 'utf8').split(/\r?\n/);
+        const userLine = lines.find((l) => /^\s*username\s*=/.test(l));
+        const m = userLine && userLine.match(/^\s*username\s*=\s*(.+?)\s*$/);
+        sendJson(res, 200, { hasConf: true, username: m ? m[1] : null });
     }
     catch (e) { sendJson(res, 500, { error: e.message }); }
 });
@@ -328,13 +227,7 @@ route('POST', '/api/config/credentials', async (req, res) => {
     const body = await readBody(req);
     if (!body.username || !body.password) { sendJson(res, 400, { error: 'username et password requis.' }); return; }
     try {
-        await runPwshJson(`
-try {
-    Set-SockseekCredentials -Username ${psQuote(body.username)} -Password ${psQuote(body.password)}
-    [pscustomobject]@{ ok = $true } | ConvertTo-Json
-}
-catch { [pscustomobject]@{ error = $_.Exception.Message } | ConvertTo-Json }
-`);
+        setSockseekCredentials({ username: body.username, password: body.password });
         sendJson(res, 200, { ok: true });
     }
     catch (e) { sendJson(res, 500, { error: e.message }); }
@@ -344,13 +237,7 @@ route('POST', '/api/config/default-dir', async (req, res) => {
     const body = await readBody(req);
     if (!body.path) { sendJson(res, 400, { error: 'path requis.' }); return; }
     try {
-        await runPwshJson(`
-try {
-    Set-DefaultOutputDir -OutputDir ${psQuote(body.path)}
-    [pscustomobject]@{ ok = $true } | ConvertTo-Json
-}
-catch { [pscustomobject]@{ error = $_.Exception.Message } | ConvertTo-Json }
-`);
+        setDefaultOutputDir(body.path);
         sendJson(res, 200, { ok: true });
     }
     catch (e) { sendJson(res, 500, { error: e.message }); }
@@ -359,15 +246,8 @@ catch { [pscustomobject]@{ error = $_.Exception.Message } | ConvertTo-Json }
 route('POST', '/api/config/import', async (req, res) => {
     const body = await readBody(req);
     if (!body.path) { sendJson(res, 400, { error: 'path requis.' }); return; }
-    const nameArg = body.name ? ` -Name ${psQuote(body.name)}` : '';
     try {
-        const data = await runPwshJson(`
-try {
-    $r = Import-PlaylistFolder -FolderPath ${psQuote(body.path)}${nameArg}
-    $r | ConvertTo-Json
-}
-catch { [pscustomobject]@{ error = $_.Exception.Message } | ConvertTo-Json }
-`);
+        const data = importPlaylistFolder({ folderPath: body.path, name: body.name });
         sendJson(res, 200, data);
     }
     catch (e) { sendJson(res, 500, { error: e.message }); }
@@ -401,30 +281,24 @@ route('POST', '/api/open-folder', async (req, res) => {
 
 route('GET', '/api/playlists', async (req, res) => {
     try {
-        const data = await runPwshJson(`
-try {
-    $rows = foreach ($e in @(Read-Catalogue)) {
-        try {
-            $pending = @(Get-PlaylistPending -Entry $e)
-            $done = [int]$e.Total - $pending.Count
-            if ($done -lt 0) { $done = [int]$e.Ok }
-            [pscustomobject]@{
-                Name = $e.Name; Url = $e.Url; Manquants = $pending.Count; Recuperes = $done
-                Runs = $e.RunCount; LastRun = $e.LastRun; OutputDir = $e.OutputDir; Error = $false
+        const rows = readCatalogue().map((e) => {
+            try {
+                const pending = getPlaylistPending(e);
+                let done = Number(e.Total || 0) - pending.length;
+                if (done < 0) done = Number(e.Ok || 0);
+                return {
+                    Name: e.Name, Url: e.Url, Manquants: pending.length, Recuperes: done,
+                    Runs: e.RunCount, LastRun: e.LastRun, OutputDir: e.OutputDir, Error: false,
+                };
             }
-        }
-        catch {
-            [pscustomobject]@{
-                Name = $e.Name; Url = $e.Url; Manquants = '?'; Recuperes = '?'
-                Runs = $e.RunCount; LastRun = $e.LastRun; OutputDir = $e.OutputDir; Error = $true
+            catch (e2) {
+                return {
+                    Name: e.Name, Url: e.Url, Manquants: '?', Recuperes: '?',
+                    Runs: e.RunCount, LastRun: e.LastRun, OutputDir: e.OutputDir, Error: true,
+                };
             }
-        }
-    }
-    , @($rows) | ConvertTo-Json -Depth 4
-}
-catch { [pscustomobject]@{ error = $_.Exception.Message } | ConvertTo-Json }
-`);
-        sendJson(res, 200, Array.isArray(data) ? data : (data ? [data] : []));
+        });
+        sendJson(res, 200, rows);
     }
     catch (e) { sendJson(res, 500, { error: e.message }); }
 });
@@ -433,19 +307,24 @@ route('GET', '/api/playlists/detail', async (req, res, query) => {
     const url = query.get('url');
     if (!url) { sendJson(res, 400, { error: 'url requis.' }); return; }
     try {
-        const data = await runPwshJson(`
-try {
-    $e = @(Read-Catalogue) | Where-Object { $_.Url -eq ${psQuote(url)} } | Select-Object -First 1
-    if (-not $e) { [pscustomobject]@{ error = 'Playlist introuvable.' } | ConvertTo-Json; return }
-    $rapportPath = Join-Path $e.OutputDir 'rapport.csv'
-    $rows = if (Test-Path -LiteralPath $rapportPath) { @(Import-Csv -LiteralPath $rapportPath) } else { @() }
-    $log = Get-ChildItem -LiteralPath $e.OutputDir -Filter 'sockseek-*.log' -ErrorAction SilentlyContinue |
-           Sort-Object LastWriteTime -Descending | Select-Object -First 1 | ForEach-Object { $_.FullName }
-    [pscustomobject]@{ outputDir = $e.OutputDir; logPath = $log; rows = @($rows) } | ConvertTo-Json -Depth 4
-}
-catch { [pscustomobject]@{ error = $_.Exception.Message } | ConvertTo-Json }
-`);
-        sendJson(res, 200, data);
+        const entry = readCatalogue().find((e) => e.Url === url);
+        if (!entry) { sendJson(res, 200, { error: 'Playlist introuvable.' }); return; }
+
+        const rapportPath = path.join(entry.OutputDir, 'rapport.csv');
+        const rows = fs.existsSync(rapportPath) ? parseCsv(fs.readFileSync(rapportPath, 'utf8')) : [];
+
+        let logPath = null;
+        try {
+            const logs = fs.readdirSync(entry.OutputDir)
+                .filter((n) => /^sockseek-.*\.log$/.test(n))
+                .map((n) => path.join(entry.OutputDir, n));
+            if (logs.length) {
+                logPath = logs.map((f) => ({ f, mtime: fs.statSync(f).mtimeMs })).sort((a, b) => b.mtime - a.mtime)[0].f;
+            }
+        }
+        catch (e) { /* dossier illisible : pas de journal */ }
+
+        sendJson(res, 200, { outputDir: entry.OutputDir, logPath, rows });
     }
     catch (e) { sendJson(res, 500, { error: e.message }); }
 });
@@ -454,13 +333,7 @@ route('POST', '/api/playlists/delete', async (req, res) => {
     const body = await readBody(req);
     if (!body.url) { sendJson(res, 400, { error: 'url requis.' }); return; }
     try {
-        await runPwshJson(`
-try {
-    Remove-CatalogueEntry -Url ${psQuote(body.url)}${body.deleteFiles ? ' -DeleteFiles' : ''}
-    [pscustomobject]@{ ok = $true } | ConvertTo-Json
-}
-catch { [pscustomobject]@{ error = $_.Exception.Message } | ConvertTo-Json }
-`);
+        removeCatalogueEntry(body.url, { deleteFiles: !!body.deleteFiles });
         sendJson(res, 200, { ok: true });
     }
     catch (e) { sendJson(res, 500, { error: e.message }); }
@@ -558,34 +431,39 @@ route('GET', '/api/jobs/stream', async (req, res) => {
     });
 });
 
-// ---------------------------------------------------------- fichiers statiques
-const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8' };
+// ============================================================== static ====
+
+const MIME = {
+    '.html': 'text/html; charset=utf-8',
+    '.js': 'text/javascript; charset=utf-8',
+    '.css': 'text/css; charset=utf-8',
+    '.ico': 'image/x-icon',
+};
 
 function serveStatic(req, res, pathname) {
-    const rel = pathname === '/' ? 'index.html' : pathname.slice(1);
-    const filePath = path.join(PUBLIC_DIR, rel);
+    let rel = pathname === '/' ? '/index.html' : pathname;
+    const filePath = path.normalize(path.join(PUBLIC_DIR, rel));
     if (!filePath.startsWith(PUBLIC_DIR)) { res.writeHead(403); res.end(); return; }
     fs.readFile(filePath, (err, data) => {
-        if (err) { res.writeHead(404); res.end('Introuvable'); return; }
-        res.writeHead(200, { 'Content-Type': MIME[path.extname(filePath)] || 'application/octet-stream' });
+        if (err) { res.writeHead(404); res.end('Not found'); return; }
+        const ext = path.extname(filePath);
+        res.writeHead(200, { 'Content-Type': MIME[ext] || 'application/octet-stream' });
         res.end(data);
     });
 }
 
+// =================================================================== http ==
+
 const server = http.createServer(async (req, res) => {
-    const parsed = new URL(req.url, 'http://localhost');
-    const match = routes.find((r) => r.method === req.method && r.pattern === parsed.pathname);
+    const url = new URL(req.url, `http://${req.headers.host}`);
+    const match = routes.find((r) => r.method === req.method && r.pattern === url.pathname);
     if (match) {
-        try {
-            await match.handler(req, res, parsed.searchParams);
-        }
-        catch (e) {
-            if (!res.headersSent) sendJson(res, 500, { error: e.message });
-        }
+        try { await match.handler(req, res, url.searchParams); }
+        catch (e) { sendJson(res, 500, { error: e.message }); }
         return;
     }
-    if (req.method === 'GET') { serveStatic(req, res, parsed.pathname); return; }
-    res.writeHead(404); res.end();
+    if (req.method === 'GET') { serveStatic(req, res, url.pathname); return; }
+    res.writeHead(404); res.end('Not found');
 });
 
 server.listen(PORT, () => {

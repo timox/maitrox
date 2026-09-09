@@ -1,0 +1,11 @@
+{
+  "name": "sockseek-kit",
+  "private": true,
+  "description": "Kit sockseek -- playlists SoundCloud/YouTube vers Soulseek. Node.js pur, aucune dependance.",
+  "scripts": {
+    "test": "node --test tests/*.test.js",
+    "webgui": "node webgui/server.js",
+    "install-binaries": "node bin/install.js",
+    "menu": "node bin/menu.js"
+  }
+}

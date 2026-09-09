@@ -6,43 +6,46 @@ obtenus avec un rapport détaillé de ce qui a échoué et pourquoi.
 
 ## Contenu
 
+Tout tourne sur [Node.js](https://nodejs.org/) seul, sans aucune dépendance
+à installer (`npm install` n'est pas nécessaire) — même moteur que
+l'interface web, sur Windows comme sur Linux/macOS.
+
 | Fichier | Rôle |
 |---|---|
-| `installer.bat` | **Double-clic : installe tout** |
+| `installer.bat` / `installer.sh` | **Double-clic (ou `./installer.sh`) : installe tout** |
 | `webgui.bat` / `webgui.sh` | **Double-clic (ou `./webgui.sh`) : interface graphique**, dans le navigateur — voir plus bas |
-| `webgui/server.js` | Le serveur de l'interface graphique (Node.js, sans dépendance à installer) |
+| `webgui/server.js` | Le serveur de l'interface graphique |
 | `webgui/public/` | Page web de l'interface (HTML/CSS/JS) |
-| `lancer.bat` | Double-clic : menu console (nouvelle playlist, reprise, état) — trouve `pwsh` et lance `Menu.ps1` |
-| `reprendre.bat` | Double-clic : va direct au menu de reprise console, sans passer par celui de `lancer.bat` |
-| `Menu.ps1` | Le menu interactif console ; tout le cheminement (retours, sortie) y vit |
-| `Install-Sockseek.ps1` | Télécharge les binaires, crée la configuration, règle le PATH |
-| `Get-SoulseekList.ps1` | Extraction, nettoyage, téléchargement, rapport |
-| `Build-Playlist.ps1` | Rapport et playlist seuls, réutilisable après un run manuel |
-| `Resume-Downloads.ps1` | Reprise groupée des titres manquants, toutes playlists |
-| `SockseekLib.ps1` | Fonctions partagées, pas destiné à être lancé seul |
+| `lancer.bat` / `lancer.sh` | Menu console (nouvelle playlist, reprise, état) — lance `bin/menu.js` |
+| `reprendre.bat` / `reprendre.sh` | Va direct au menu de reprise console, sans passer par celui de `lancer.bat` |
+| `bin/menu.js` | Le menu interactif console ; tout le cheminement (retours, sortie) y vit |
+| `bin/install.js` | Télécharge les binaires, crée la configuration, règle le PATH |
+| `bin/extract.js` | Extraction, nettoyage, téléchargement, rapport |
+| `bin/build-playlist.js` | Rapport et playlist seuls, réutilisable après un run manuel |
+| `bin/resume.js` | Reprise groupée des titres manquants, toutes playlists |
+| `lib/` | Fonctions partagées (nettoyage des titres, catalogue, index sockseek, installation) |
+| `powershell-legacy/` | Ancien kit PowerShell (archive, non maintenu) — voir son propre README |
 
 Si tu n'as pas envie de toucher à une ligne de commande, double-clic sur
-`installer.bat` une fois, puis sur `webgui.bat` (`./webgui.sh` sous Linux)
-pour tout le reste : ça démarre un petit serveur local et ouvre une page
-avec quatre onglets (Nouvelle playlist, Configuration, Playlists, Suivi
-d'exécution — détail plus bas) dans ton navigateur. `lancer.bat` propose la
-même chose en mode texte dans une console, pour qui préfère ça ou travaille
-par SSH. Le reste de ce document décrit ce que ces outils font et comment
-piloter les scripts directement.
+`installer.bat` (`./installer.sh` sous Linux/macOS) une fois, puis sur
+`webgui.bat` (`./webgui.sh`) pour tout le reste : ça démarre un petit
+serveur local et ouvre une page avec quatre onglets (Nouvelle playlist,
+Configuration, Playlists, Suivi d'exécution — détail plus bas) dans ton
+navigateur. `lancer.bat`/`lancer.sh` propose la même chose en mode texte
+dans une console, pour qui préfère ça ou travaille par SSH. Le reste de ce
+document décrit ce que ces outils font et comment piloter les scripts
+directement.
 
 ### Interface graphique (`webgui.bat` / `webgui.sh`)
 
-Nécessite [Node.js](https://nodejs.org/) en plus de PowerShell 7 (aucun
-paquet à installer avec `npm` : le serveur n'utilise que ce que Node fournit
-déjà). Double-clic sur `webgui.bat` sous Windows, ou `./webgui.sh` dans un
+Double-clic sur `webgui.bat` sous Windows, ou `./webgui.sh` dans un
 terminal sous Linux/macOS : un petit serveur démarre sur
 `http://localhost:8342` et s'ouvre automatiquement dans le navigateur par
 défaut. Toute la logique (nettoyage des titres, catalogue, invocation de
-sockseek/yt-dlp) reste dans les scripts PowerShell existants — le serveur
-Node ne fait que les piloter et afficher le résultat dans une page web,
-ce qui la rend utilisable aussi bien sous Windows que sous Linux (contrairement
-à l'ancienne interface Windows Forms, qui ne pouvait exister que sous
-Windows).
+sockseek/yt-dlp) vit dans `lib/` — le serveur Node ne fait que la piloter et
+afficher le résultat dans une page web, ce qui la rend utilisable aussi
+bien sous Windows que sous Linux (contrairement à l'ancienne interface
+Windows Forms, qui ne pouvait exister que sous Windows).
 
 Quatre onglets :
 
@@ -102,59 +105,42 @@ mêmes actions.
 
 ## Prérequis
 
-PowerShell 7 ou plus. Windows PowerShell 5.1 ne suffit pas : le kit utilise
-l'encodage `utf8NoBOM` et `[IO.Path]::GetRelativePath`, absents de la 5.1.
-
-```powershell
-winget install --id Microsoft.PowerShell --source winget
-```
-
-Ensuite, ouvre **pwsh** (pas `powershell.exe`, ni ISE — ISE est resté bloqué
-sur 5.1 et ne sera jamais porté).
-
-Pour l'interface graphique (`webgui.bat`/`webgui.sh`) uniquement : il faut
-aussi [Node.js](https://nodejs.org/) (n'importe quelle version récente).
-Rien d'autre à installer avec `npm` — le serveur n'utilise que ce que Node
-fournit déjà. Sans interface graphique, seul pwsh est nécessaire
-(`lancer.bat`/`Menu.ps1` et les scripts en ligne de commande n'en ont pas
-besoin).
+[Node.js](https://nodejs.org/) (n'importe quelle version récente, 18+).
+Rien d'autre à installer avec `npm` — tout le kit n'utilise que ce que Node
+fournit déjà, `tar` (déjà présent sous Linux/macOS, et sous Windows 10
+1803+) pour extraire les archives de sockseek/yt-dlp, et une connexion
+sortante vers GitHub pour les récupérer.
 
 ## Installation
 
-Double-clique sur **`installer.bat`**, ou en ligne de commande :
+Double-clique sur **`installer.bat`** (Windows) ou lance `./installer.sh`
+(Linux/macOS), ou en ligne de commande :
 
-```powershell
+```sh
 cd <dossier-du-kit>
-pwsh -File .\Install-Sockseek.ps1
+node bin/install.js
 ```
 
 L'installateur enchaîne :
 
-1. Passe la politique d'exécution à `Unrestricted` pour l'utilisateur courant
-   (Windows uniquement — sans effet ailleurs).
-2. Résout la dernière release de `fiso64/sockseek` pour la plateforme
+1. Résout la dernière release de `fiso64/sockseek` pour la plateforme
    courante (`win-x64`, `linux-x64` ou `osx-x64`), extrait le binaire vers
    `%LOCALAPPDATA%\sockseek` (Windows) ou `~/.local/share/sockseek`
    (Linux/macOS), et le rend exécutable (`chmod +x`) hors Windows.
-3. Fait de même pour `yt-dlp` (`yt-dlp.exe`, `yt-dlp_linux` ou `yt-dlp_macos`
+2. Fait de même pour `yt-dlp` (`yt-dlp.exe`, `yt-dlp_linux` ou `yt-dlp_macos`
    selon la plateforme).
-4. Ajoute le dossier au PATH utilisateur (Windows : registre, aucune
-   élévation requise ; Linux/macOS : session courante seulement — le
-   script affiche la ligne à ajouter à ton profil de shell pour que ce soit
-   permanent).
-5. Demande tes identifiants Soulseek et écrit `sockseek.conf` (dans
+3. Ajoute le dossier d'installation au `PATH` de la session courante, et
+   affiche la ligne à ajouter à ton profil de shell (Linux/macOS) ou à tes
+   variables d'environnement (Windows) pour que ce soit permanent.
+4. Demande tes identifiants Soulseek et écrit `sockseek.conf` (dans
    `%APPDATA%\sockseek` sous Windows, `~/.config/sockseek` ailleurs).
 
 Options utiles :
 
-```powershell
-.\Install-Sockseek.ps1 -InstallDir "D:\Outils\sockseek" -MusicDir "D:\Music\techno"
-.\Install-Sockseek.ps1 -Force                  # réinstalle et régénère la config
-.\Install-Sockseek.ps1 -SkipExecutionPolicy    # ne touche pas à la politique
+```sh
+node bin/install.js -InstallDir "/opt/sockseek" -MusicDir "/data/techno"
+node bin/install.js -Force                  # réinstalle et régénère la config
 ```
-
-Rouvre un terminal après l'installation : le PATH n'est relu qu'au démarrage
-d'un processus.
 
 ### À propos du compte Soulseek
 
@@ -169,28 +155,14 @@ simultanées sur le même pseudo provoquent des problèmes de connexion.
 
 Vérifie que ça passe avant d'aller plus loin :
 
-```powershell
+```sh
 sockseek "Sciahri - Let Them Go" --song --print results
 ```
 
-### À propos de la politique d'exécution
-
-`Unrestricted` exécute n'importe quel script sans avertissement, y compris ceux
-téléchargés depuis Internet. `RemoteSigned` suffirait pour ce kit et reste plus
-prudent — il n'exige une signature que pour les fichiers marqués comme venant
-du web :
-
-```powershell
-Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
-```
-
-L'installateur applique `Unrestricted` par défaut ; `-SkipExecutionPolicy` le
-laisse tranquille.
-
 ## Utilisation
 
-Double-clique sur **`lancer.bat`** et choisis « Traiter une nouvelle
-playlist ». Il demande l'URL, puis propose trois modes : tester sans rien télécharger (le défaut), télécharger
+Double-clique sur **`lancer.bat`** (ou lance `./lancer.sh`) et choisis
+« Traiter une nouvelle playlist ». Il demande l'URL, puis propose trois modes : tester sans rien télécharger (le défaut), télécharger
 pour de vrai, ou seulement extraire et nettoyer la liste. Il accepte aussi une
 URL en argument, ce qui permet d'en faire un raccourci.
 
@@ -204,20 +176,20 @@ choisi via `-MusicDir` devient ce défaut initial.
 En ligne de commande, extraction et nettoyage seuls, pour inspecter le CSV avant d'engager quoi que
 ce soit :
 
-```powershell
-.\Get-SoulseekList.ps1 -Url "https://soundcloud.com/loleanto/sets/sans-retour-short"
+```sh
+node bin/extract.js -Url "https://soundcloud.com/loleanto/sets/sans-retour-short"
 ```
 
 Voir ce que Soulseek renverrait, sans rien télécharger :
 
-```powershell
-.\Get-SoulseekList.ps1 -Url $url -Download -PrintOnly
+```sh
+node bin/extract.js -Url "$url" -Download -PrintOnly
 ```
 
 Pour de vrai :
 
-```powershell
-.\Get-SoulseekList.ps1 -Url $url -Download -OutputDir "D:\Music\techno"
+```sh
+node bin/extract.js -Url "$url" -Download -OutputDir "/data/techno"
 ```
 
 Passer `-OutputDir` explicitement, comme ci-dessus, met aussi a jour le
@@ -248,8 +220,8 @@ n'accepte pas de simple identifiant/mot de passe côté yt-dlp — un
 yt-dlp. La seule option qui fonctionne est de réutiliser la session d'un
 navigateur où tu es déjà connecté :
 
-```powershell
-.\Get-SoulseekList.ps1 -Url $url -CookiesFromBrowser firefox
+```sh
+node bin/extract.js -Url "$url" -CookiesFromBrowser firefox
 ```
 
 Valeurs acceptées : `brave`, `chrome`, `chromium`, `edge`, `firefox`,
@@ -307,7 +279,7 @@ coupés à l'export, `artiste=chaine` quand aucun artiste n'a pu être extrait.
 
 ## Suivi des échecs
 
-À la fin d'un run, `Build-Playlist.ps1` confronte l'index sockseek au disque.
+À la fin d'un run, `bin/build-playlist.js` confronte l'index sockseek au disque.
 La vérité vient du disque : un fichier absent est un échec même si l'index le
 dit téléchargé. L'index ne sert qu'à retrouver la cause.
 
@@ -328,8 +300,8 @@ détail par titre, et `sockseek-<horodatage>.log` pour le journal brut.
 
 Relancer l'analyse seule après un run manuel :
 
-```powershell
-.\Build-Playlist.ps1 -OutputDir "D:\Music\techno" -SourceCsv playlist-clean.csv
+```sh
+node bin/build-playlist.js -OutputDir "/data/techno" -SourceCsv playlist-clean.csv
 ```
 
 Code de sortie 0 si tout est passé, 10 s'il reste des échecs — exploitable en
@@ -361,23 +333,23 @@ filtre par playlist, pas titre par titre) — avec, à chaque étape, un retour
 possible au menu de reprise ou au menu principal plutôt qu'une sortie
 immédiate. En ligne de commande :
 
-```powershell
-.\Resume-Downloads.ps1 -List      # état des playlists, sans rien relancer
-.\Resume-Downloads.ps1 -DryRun    # ce qui serait repris
-.\Resume-Downloads.ps1            # reprise réelle
+```sh
+node bin/resume.js -List      # état des playlists, sans rien relancer
+node bin/resume.js -DryRun    # ce qui serait repris
+node bin/resume.js            # reprise réelle
 ```
 
 Filtrer sur une seule playlist :
 
-```powershell
-.\Resume-Downloads.ps1 -Only "sans-retour"
+```sh
+node bin/resume.js -Only "sans-retour"
 ```
 
 Retirer une playlist du catalogue (les fichiers déjà téléchargés ne sont pas
 touchés) :
 
-```powershell
-.\Resume-Downloads.ps1 -Only "sans-retour" -Forget
+```sh
+node bin/resume.js -Only "sans-retour" -Forget
 ```
 
 Après chaque reprise, les playlists M3U et les rapports concernés sont
@@ -409,14 +381,15 @@ titres, compte une dizaine de minutes au minimum. Ne touche pas à
 
 ## Tests
 
-La logique de nettoyage des titres (`Normalize-Text`, `Clean-Title`,
-`Convert-Entry`, dans `SockseekLib.ps1`) est couverte par des tests Pester
-dans `tests/SockseekLib.Tests.ps1` — pratique pour vérifier qu'une regex
-retouchée ne casse pas un cas déjà géré.
+La logique de nettoyage des titres (`normalizeText`, `cleanTitle`,
+`convertEntry`, dans `lib/text.js`) et l'analyse des résultats de run
+(`lib/runResults.js`, `lib/catalogue.js`) sont couvertes par des tests dans
+`tests/*.test.js` (runtime de test intégré à Node, aucune dépendance) —
+pratique pour vérifier qu'une regex retouchée ne casse pas un cas déjà géré.
 
-```powershell
-Install-Module Pester -Scope CurrentUser -MinimumVersion 5.0   # une fois
-Invoke-Pester .\tests\SockseekLib.Tests.ps1
+```sh
+npm test
+# equivalent : node --test tests/*.test.js
 ```
 
 ## Dépannage
@@ -435,9 +408,9 @@ requêtes par heure et par IP sans authentification, partagé avec tout le
 réseau derrière un NAT d'entreprise. Attends une heure, ou récupère les URL à
 la main sur les pages de releases et passe-les à l'installateur :
 
-```powershell
-.\Install-Sockseek.ps1 `
-   -SockseekUrl "https://github.com/.../sockseek_3.0.5_win-x64.zip" `
+```sh
+node bin/install.js \
+   -SockseekUrl "https://github.com/.../sockseek_3.0.5_win-x64.zip" \
    -YtDlpUrl    "https://github.com/.../yt-dlp.exe"
 ```
 
