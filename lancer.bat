@@ -4,13 +4,17 @@ setlocal
 
 cd /d "%~dp0"
 
-call :FindPwsh
-if errorlevel 1 goto NoPwsh
+where node >nul 2>nul
+if errorlevel 1 goto NoNode
 
-REM Toute la logique de menu vit dans Menu.ps1 (PowerShell) : ce fichier ne
-REM sert qu'a trouver pwsh et a le lancer. Une URL passee en argument saute
+REM Toute la logique de menu vit dans bin/menu.js (Node) : ce fichier ne
+REM sert qu'a trouver node et a le lancer. Une URL passee en argument saute
 REM directement au traitement, comme avant.
-"%PWSH%" -NoProfile -ExecutionPolicy Bypass -File "%~dp0Menu.ps1" -Url "%~1"
+if "%~1"=="" (
+    node "%~dp0bin\menu.js"
+) else (
+    node "%~dp0bin\menu.js" --url "%~1"
+)
 set CODE=%ERRORLEVEL%
 
 echo.
@@ -18,32 +22,11 @@ pause
 exit /b %CODE%
 
 
-:FindPwsh
-for /f "delims=" %%P in ('where pwsh.exe 2^>nul') do (
-    set "PWSH=%%P"
-    exit /b 0
-)
-if exist "%ProgramFiles%\PowerShell\7\pwsh.exe" (
-    set "PWSH=%ProgramFiles%\PowerShell\7\pwsh.exe"
-    exit /b 0
-)
-if exist "%ProgramFiles(x86)%\PowerShell\7\pwsh.exe" (
-    set "PWSH=%ProgramFiles(x86)%\PowerShell\7\pwsh.exe"
-    exit /b 0
-)
-if exist "%LOCALAPPDATA%\Microsoft\PowerShell\7\pwsh.exe" (
-    set "PWSH=%LOCALAPPDATA%\Microsoft\PowerShell\7\pwsh.exe"
-    exit /b 0
-)
-exit /b 1
-
-
-:NoPwsh
+:NoNode
 echo.
-echo   PowerShell 7 est introuvable. Lance d'abord installer.bat.
+echo   Node.js est introuvable dans le PATH.
 echo.
-echo   Ce kit ne fonctionne ni avec le PowerShell 5.1 de Windows, ni
-echo   avec ISE : il utilise des fonctions qui n'existent pas en 5.1.
+echo   Installe-le depuis https://nodejs.org/ puis relance ce fichier.
 echo.
 pause
 exit /b 1
