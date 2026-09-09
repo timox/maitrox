@@ -41,6 +41,16 @@ function setBusy(busy) {
    'btn-resume-selected', 'btn-delete-selected'].forEach((id) => { el(id).disabled = busy; });
 }
 
+// Pastille d'etat visible depuis n'importe quel onglet (pas seulement
+// "Suivi d'execution") : un job lance depuis "Nouvelle playlist" ne doit
+// pas donner l'impression que plus rien ne se passe des qu'on change
+// d'onglet.
+function setGlobalStatus(state, text) {
+  const pill = el('global-status');
+  pill.dataset.state = state;
+  el('global-status-text').textContent = text;
+}
+
 function appendLog(line) {
   const box = el('log');
   box.textContent += line + '\n';
@@ -52,6 +62,7 @@ async function startJob(kind, extra, description) {
   switchTab('suivi');
   el('log').textContent = '';
   el('suivi-status').textContent = `En cours : ${description}`;
+  setGlobalStatus('busy', description);
   setBusy(true);
   try {
     await api('POST', '/api/jobs/start', { kind, ...extra });
@@ -59,6 +70,7 @@ async function startJob(kind, extra, description) {
   catch (e) {
     setBusy(false);
     el('suivi-status').textContent = `Echec du demarrage : ${e.message}`;
+    setGlobalStatus('error', 'Echec du demarrage');
   }
 }
 
@@ -70,6 +82,7 @@ function connectStream() {
     const d = JSON.parse(ev.data);
     el('log').textContent = '';
     el('suivi-status').textContent = `En cours : ${d.description}`;
+    setGlobalStatus('busy', d.description);
     setBusy(true);
   });
   src.addEventListener('log', (ev) => appendLog(JSON.parse(ev.data).line));
@@ -78,6 +91,7 @@ function connectStream() {
     el('suivi-status').textContent = d.code === 0
       ? `Termine sans echec : ${d.description}`
       : `Termine (code ${d.code}) : ${d.description}`;
+    setGlobalStatus(d.code === 0 ? 'ok' : 'error', d.code === 0 ? 'Termine' : `Code ${d.code}`);
     setBusy(false);
     refreshPlaylists();
   });
@@ -228,9 +242,12 @@ function renderPlaylists() {
   shown.forEach((r) => {
     const tr = document.createElement('tr');
     tr.className = r.Url === selectedUrl ? 'selected' : '';
+    const missing = Number(r.Manquants) || 0;
     tr.innerHTML = `<td>${esc(r.Error ? r.Name + ' (erreur de lecture)' : r.Name)}</td>
-      <td>${esc(r.Manquants)}</td><td>${esc(r.Recuperes)}</td><td>${esc(r.Runs)}</td>
-      <td>${esc(r.LastRun ? new Date(r.LastRun).toLocaleString() : '')}</td><td>${esc(r.OutputDir)}</td>`;
+      <td><span class="metric ${missing > 0 ? 'metric-warn' : 'metric-ok'}">${esc(r.Manquants)}</span></td>
+      <td><span class="metric metric-neutral">${esc(r.Recuperes)}</span></td>
+      <td class="num">${esc(r.Runs)}</td>
+      <td>${esc(r.LastRun ? new Date(r.LastRun).toLocaleString() : '')}</td><td class="path">${esc(r.OutputDir)}</td>`;
     tr.addEventListener('click', () => { selectedUrl = r.Url; renderPlaylists(); loadDetail(r.Url); });
     tbody.appendChild(tr);
   });
@@ -315,6 +332,7 @@ el('btn-open-folder').addEventListener('click', async () => {
     if (status.active) {
       setBusy(true);
       el('suivi-status').textContent = `En cours : ${status.description}`;
+      setGlobalStatus('busy', status.description);
       switchTab('suivi');
     }
     if (status.lines) status.lines.forEach(appendLog);

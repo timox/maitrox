@@ -85,9 +85,21 @@ async function main() {
     if (cookiesFromBrowser) ytArgs.push('--cookies-from-browser', cookiesFromBrowser);
     ytArgs.push(url);
 
+    // yt-dlp -J n'affiche son resultat qu'une fois TOUTES les pistes
+    // recuperees (une requete HTTP chacune, espacee de --sleep-requests) :
+    // rien d'autre ne peut s'afficher entre-temps. Sans ce battement,
+    // une playlist un peu longue laisse le journal silencieux plusieurs
+    // dizaines de secondes -- indiscernable d'un blocage reel.
+    const startedAt = Date.now();
+    const heartbeat = setInterval(() => {
+        const elapsed = Math.round((Date.now() - startedAt) / 1000);
+        console.log(paint('gray', `  ... toujours en cours (${elapsed}s, une requete par piste)`));
+    }, 15000);
+
     let ytRes;
     try { ytRes = await runCapture('yt-dlp', ytArgs); }
     catch (e) { throw new Error(`yt-dlp introuvable ou en echec : ${e.message}`); }
+    finally { clearInterval(heartbeat); }
     const raw = ytRes.stdout;
     if (!raw || !raw.trim()) {
         throw new Error("yt-dlp n'a rien renvoye. Verifie l'URL et l'accessibilite de la playlist.");
