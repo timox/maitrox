@@ -64,6 +64,14 @@ async function startJob(kind, extra, description) {
 
 function connectStream() {
   const src = new EventSource('/api/jobs/stream');
+  src.addEventListener('start', (ev) => {
+    // Une operation demarree depuis un autre onglet/navigateur : refleter
+    // l'etat ici aussi plutot que de laisser croire que rien ne tourne.
+    const d = JSON.parse(ev.data);
+    el('log').textContent = '';
+    el('suivi-status').textContent = `En cours : ${d.description}`;
+    setBusy(true);
+  });
   src.addEventListener('log', (ev) => appendLog(JSON.parse(ev.data).line));
   src.addEventListener('done', (ev) => {
     const d = JSON.parse(ev.data);
