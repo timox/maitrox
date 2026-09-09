@@ -13,10 +13,10 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { spawnSync } = require('child_process');
+const { runInherit, runCapture } = require('../lib/proc');
 const { parseArgs } = require('../lib/argv');
 const { convertEntry } = require('../lib/text');
-const { writeCsv, parseCsv } = require('../lib/csv');
+const { writeCsv } = require('../lib/csv');
 const { safeFolderName, getDefaultOutputDir, setDefaultOutputDir, getSockseekConfPath, getSockseekConfigDir } = require('../lib/paths');
 const { findOnPath } = require('../lib/findBinary');
 const { paint } = require('../lib/playlist');
@@ -85,8 +85,9 @@ async function main() {
     if (cookiesFromBrowser) ytArgs.push('--cookies-from-browser', cookiesFromBrowser);
     ytArgs.push(url);
 
-    const ytRes = spawnSync('yt-dlp', ytArgs, { maxBuffer: 1024 * 1024 * 256, encoding: 'utf8' });
-    if (ytRes.error) throw new Error(`yt-dlp introuvable ou en echec : ${ytRes.error.message}`);
+    let ytRes;
+    try { ytRes = await runCapture('yt-dlp', ytArgs); }
+    catch (e) { throw new Error(`yt-dlp introuvable ou en echec : ${e.message}`); }
     const raw = ytRes.stdout;
     if (!raw || !raw.trim()) {
         throw new Error("yt-dlp n'a rien renvoye. Verifie l'URL et l'accessibilite de la playlist.");
@@ -188,7 +189,7 @@ async function main() {
             if (cookiesFromBrowser) dlArgs.push('--cookies-from-browser', cookiesFromBrowser);
             dlArgs.push(row.Url);
 
-            const dl = spawnSync('yt-dlp', dlArgs, { stdio: 'inherit' });
+            const dl = await runInherit('yt-dlp', dlArgs);
             if (dl.status === 0) {
                 console.log(paint('green', `  OK : ${row.Artist} - ${row.Title}`));
             }
@@ -311,8 +312,8 @@ async function main() {
         console.log(paint('gray', 'bannit 30 minutes si les recherches s\'enchainent trop vite.'));
     }
 
-    const run = spawnSync(exe, sockArgs, { stdio: 'inherit' });
-    const code = run.status == null ? 1 : run.status;
+    const run = await runInherit(exe, sockArgs);
+    const code = run.status;
 
     if (printOnly) {
         console.log('');

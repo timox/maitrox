@@ -10,7 +10,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { spawnSync } = require('child_process');
+const { runInherit } = require('../lib/proc');
 const { parseArgs } = require('../lib/argv');
 const { readCatalogue, saveCatalogue, getPlaylistPending } = require('../lib/catalogue');
 const { getCataloguePath } = require('../lib/paths');
@@ -45,7 +45,7 @@ function stampNow() {
     return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
 }
 
-function main() {
+async function main() {
     const args = parseArgs(process.argv.slice(2), ['List', 'DryRun', 'Forget']);
     const list = !!args.List;
     const only = args.Only;
@@ -185,7 +185,7 @@ function main() {
             '--output-dir', dir,
         ];
 
-        const run = spawnSync(exe, sockArgs, { stdio: 'inherit' });
+        const run = await runInherit(exe, sockArgs);
         if (run.status !== 0) {
             console.warn(`sockseek a rendu le code ${run.status}. Journal : ${logPath}`);
         }
@@ -249,8 +249,10 @@ function main() {
 }
 
 if (require.main === module) {
-    try { process.exit(main() || 0); }
-    catch (e) { console.error(paint('red', e.message)); process.exit(1); }
+    main().then((code) => process.exit(code || 0)).catch((e) => {
+        console.error(paint('red', e.message));
+        process.exit(1);
+    });
 }
 
 module.exports = { main };
