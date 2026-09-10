@@ -87,7 +87,9 @@ function startJob(scriptPath, args, description) {
     proc.on('error', (e) => {
         job.done = true;
         job.exitCode = -1;
-        job.lines.push(`[erreur] ${e.message}`);
+        const line = `[ERREUR] ${e.message}`;
+        job.lines.push(line);
+        broadcast('log', { line });
         broadcast('done', { code: -1, description, error: e.message });
     });
 

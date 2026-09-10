@@ -51,16 +51,33 @@ function setGlobalStatus(state, text) {
   el('global-status-text').textContent = text;
 }
 
+// Les scripts de bin/ prefixent leurs erreurs de "[ERREUR] " (voir
+// bin/extract.js, bin/resume.js, etc.) : detecte ce marqueur pour mettre
+// la ligne en evidence dans le journal, et pour remonter le vrai message
+// -- pas seulement un code de sortie -- dans le statut et la pastille.
+const ERROR_PREFIX = /^\[erreur\]\s?/i;
+let lastErrorText = '';
+
 function appendLog(line) {
   const box = el('log');
-  box.textContent += line + '\n';
+  const isError = ERROR_PREFIX.test(line);
+  if (isError) lastErrorText = line.replace(ERROR_PREFIX, '');
+  const row = document.createElement('div');
+  row.className = isError ? 'log-line log-error' : 'log-line';
+  row.textContent = line;
+  box.appendChild(row);
   box.scrollTop = box.scrollHeight;
+}
+
+function clearLog() {
+  el('log').textContent = '';
+  lastErrorText = '';
 }
 
 async function startJob(kind, extra, description) {
   if (jobBusy) { alert("Une operation est deja en cours. Attends qu'elle se termine."); return; }
   switchTab('suivi');
-  el('log').textContent = '';
+  clearLog();
   el('suivi-status').textContent = `En cours : ${description}`;
   setGlobalStatus('busy', description);
   setBusy(true);
@@ -80,7 +97,7 @@ function connectStream() {
     // Une operation demarree depuis un autre onglet/navigateur : refleter
     // l'etat ici aussi plutot que de laisser croire que rien ne tourne.
     const d = JSON.parse(ev.data);
-    el('log').textContent = '';
+    clearLog();
     el('suivi-status').textContent = `En cours : ${d.description}`;
     setGlobalStatus('busy', d.description);
     setBusy(true);
@@ -88,10 +105,15 @@ function connectStream() {
   src.addEventListener('log', (ev) => appendLog(JSON.parse(ev.data).line));
   src.addEventListener('done', (ev) => {
     const d = JSON.parse(ev.data);
-    el('suivi-status').textContent = d.code === 0
-      ? `Termine sans echec : ${d.description}`
-      : `Termine (code ${d.code}) : ${d.description}`;
-    setGlobalStatus(d.code === 0 ? 'ok' : 'error', d.code === 0 ? 'Termine' : `Code ${d.code}`);
+    if (d.code === 0) {
+      el('suivi-status').textContent = `Termine sans echec : ${d.description}`;
+      setGlobalStatus('ok', 'Termine');
+    }
+    else {
+      const reason = lastErrorText || d.error || `code ${d.code}`;
+      el('suivi-status').textContent = `Echec (${d.description}) : ${reason}`;
+      setGlobalStatus('error', reason);
+    }
     setBusy(false);
     refreshPlaylists();
   });

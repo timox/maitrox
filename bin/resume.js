@@ -250,7 +250,7 @@ async function main() {
 
 if (require.main === module) {
     main().then((code) => process.exit(code || 0)).catch((e) => {
-        console.error(paint('red', e.message));
+        console.error(`[ERREUR] ${e.message}`);
         process.exit(1);
     });
 }
