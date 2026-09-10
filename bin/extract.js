@@ -18,7 +18,7 @@ const { parseArgs } = require('../lib/argv');
 const { convertEntry } = require('../lib/text');
 const { writeCsv } = require('../lib/csv');
 const { safeFolderName, getDefaultOutputDir, setDefaultOutputDir, getSockseekConfPath, getSockseekConfigDir } = require('../lib/paths');
-const { findOnPath } = require('../lib/findBinary');
+const { findOnPath, findBinary } = require('../lib/findBinary');
 const { paint } = require('../lib/playlist');
 
 const KNOWN_BROWSERS = ['brave', 'chrome', 'chromium', 'edge', 'firefox', 'opera', 'safari', 'vivaldi', 'whale'];
@@ -258,23 +258,28 @@ async function main() {
         exe = fs.realpathSync(sockseekPathArg);
     }
     else {
-        exe = findOnPath(['sockseek', 'sldl']) || findExtra(path.resolve(__dirname, '..'));
+        // PATH d'abord, puis le dossier d'installation par defaut du kit
+        // (celui que bin/install.js utilise, dependant de l'OS -- voir
+        // lib/install.js:defaultInstallDir) : sockseek y est present juste
+        // apres une installation, meme si le PATH de la session courante ne
+        // le sait pas encore (executions separees, comme depuis la webgui).
+        exe = findBinary(['sockseek', 'sldl']) || findExtra(path.resolve(__dirname, '..'));
     }
 
     if (!exe) {
         console.log('');
         console.warn([
-            'Executable sockseek introuvable.',
+            'Executable sockseek introuvable (ni dans le PATH, ni dans le dossier',
+            "d'installation par defaut du kit).",
             '',
-            'Sockseek se telecharge en binaire autonome depuis la page des releases',
-            "GitHub : rien ne l'ajoute au PATH tout seul. Deux solutions :",
+            'Deux solutions :',
             '',
-            '  1. Indiquer le chemin au script :',
+            '  1. Indiquer le chemin explicitement :',
             '     -SockseekPath "/chemin/vers/sockseek"',
             '',
-            '  2. Ou lancer node bin/install.js pour l\'installer et le mettre sur le PATH.',
+            "  2. Lancer installer.sh (ou installer.bat) pour l'installer.",
         ].join('\n'));
-        console.log(paint('green', `Le CSV ${out} est bien ecrit : relance juste avec -SockseekPath.`));
+        console.log(paint('green', `Le CSV ${out} est ecrit : relancer avec -SockseekPath une fois installe.`));
         return 2;
     }
 
@@ -302,15 +307,15 @@ async function main() {
             '',
             'avec au minimum :',
             '',
-            '  username = ton-compte-soulseek',
-            '  password = ton-mot-de-passe',
+            '  username = compte-soulseek',
+            '  password = mot-de-passe',
             `  output-dir = ${outputDir}`,
             '',
-            "Utilise un compte Soulseek DEDIE si tu fais tourner un autre client",
-            '(Nicotine+, slskd) en parallele : deux sessions sur le meme compte',
+            'Utiliser un compte Soulseek DEDIE en cas d\'autre client (Nicotine+,',
+            'slskd) deja connecte en parallele : deux sessions sur le meme compte',
             'provoquent des problemes de connexion.',
         ].join('\n'));
-        console.log(paint('green', `Le CSV ${out} est bien ecrit : relance une fois la config en place.`));
+        console.log(paint('green', `Le CSV ${out} est ecrit : relancer une fois la configuration en place.`));
         return 3;
     }
     console.log(paint('gray', `Configuration : ${conf}`));
@@ -362,9 +367,9 @@ async function main() {
             console.warn([
                 'Identifiants Soulseek refuses (INVALIDPASS).',
                 'Cause la plus frequente : ce pseudo est deja pris par quelqu\'un d\'autre --',
-                'Soulseek ne cree un compte que si le pseudo est libre, sinon ton mot de',
-                'passe ne correspondra jamais au sien. Choisis un pseudo moins courant.',
-                'Sinon, verifie le mot de passe dans sockseek.conf.',
+                'Soulseek ne cree un compte que si le pseudo est libre, sinon le mot de',
+                'passe ne correspondra jamais au sien. Choisir un pseudo moins courant.',
+                'Sinon, verifier le mot de passe dans sockseek.conf.',
             ].join('\n'));
         }
         else if (logContent && /login failed/i.test(logContent)) {

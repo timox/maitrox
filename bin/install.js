@@ -57,10 +57,13 @@ function askHidden(prompt) {
 }
 
 async function main() {
-    const args = parseArgs(process.argv.slice(2), ['Force', 'SkipCredentials']);
+    const args = parseArgs(process.argv.slice(2), ['Force', 'ForceCredentials', 'SkipCredentials']);
     const installDir = args.InstallDir || defaultInstallDir();
     const musicDir = args.MusicDir || defaultMusicDir();
     const force = !!args.Force;
+    // Delibrement separe de -Force : regenerer sockseek.conf ecrase le mot
+    // de passe Soulseek enregistre, une reinstallation des binaires non.
+    const forceCredentials = !!args.ForceCredentials;
     const skipCredentials = !!args.SkipCredentials;
     const sockseekUrl = args.SockseekUrl;
     const ytDlpUrl = args.YtDlpUrl;
@@ -73,17 +76,30 @@ async function main() {
 
     const { sockPattern, sockName, ytPattern, ytName } = platformNames();
 
+    // Chaque binaire s'installe independamment : un echec sur l'un (quota
+    // GitHub, pas de reseau) ne doit pas empecher de tenter l'autre, ni
+    // d'atteindre l'etape Configuration plus bas -- sans ce garde-fou,
+    // sockseek en echec sautait aussi l'installation de yt-dlp et la
+    // configuration, sans lien logique entre les deux.
     step('sockseek');
-    const sockExe = await installBinary({
-        repo: 'fiso64/sockseek', pattern: sockPattern, name: sockName,
-        installDir, force, explicitUrl: sockseekUrl, log: info,
-    });
+    let sockExe = null;
+    try {
+        sockExe = await installBinary({
+            repo: 'fiso64/sockseek', pattern: sockPattern, name: sockName,
+            installDir, force, explicitUrl: sockseekUrl, log: info,
+        });
+    }
+    catch (e) { console.error(`[ERREUR] ${e.message}`); }
 
     step('yt-dlp');
-    const ytExe = await installBinary({
-        repo: 'yt-dlp/yt-dlp', pattern: ytPattern, name: ytName,
-        installDir, force, explicitUrl: ytDlpUrl, archive: false, log: info,
-    });
+    let ytExe = null;
+    try {
+        ytExe = await installBinary({
+            repo: 'yt-dlp/yt-dlp', pattern: ytPattern, name: ytName,
+            installDir, force, explicitUrl: ytDlpUrl, archive: false, log: info,
+        });
+    }
+    catch (e) { console.error(`[ERREUR] ${e.message}`); }
 
     step('PATH');
     const sep = path.delimiter;
@@ -91,10 +107,10 @@ async function main() {
     info('Ajoute pour cette session.');
     if (process.platform === 'win32') {
         info('Pour le rendre permanent : Parametres systeme > Variables d\'environnement,');
-        info(`ajoute "${installDir}" a la variable PATH de l'utilisateur.`);
+        info(`ajouter "${installDir}" a la variable PATH de l'utilisateur.`);
     }
     else {
-        info('Pour le rendre permanent, ajoute a ton profil de shell :');
+        info('Pour le rendre permanent, ajouter au profil de shell :');
         info(`  export PATH="${installDir}:$PATH"`);
     }
 
@@ -102,19 +118,34 @@ async function main() {
     const confDir = getSockseekConfigDir();
     const confFile = getSockseekConfPath();
 
+    const confAlreadyExists = fs.existsSync(confFile);
+
     if (skipCredentials) {
         info('-SkipCredentials : ni prompt, ni ecriture de sockseek.conf.');
         info("Configure les identifiants separement (POST /api/config/credentials, ou --username/--password).");
     }
-    else if (fs.existsSync(confFile) && !force) {
+    // -Force ne concerne QUE les binaires (reinstallation sans risque) : il
+    // ne doit jamais, par lui-meme, ecraser les identifiants Soulseek deja
+    // enregistres -- perte du mot de passe sans avertissement sinon, pour
+    // qui voulait juste forcer la reinstallation de sockseek/yt-dlp.
+    // Regenerer sockseek.conf exige -ForceCredentials, separement.
+    else if (confAlreadyExists && !forceCredentials) {
         info(`sockseek.conf existe deja : ${confFile}`);
-        info('-Force pour le regenerer.');
+        info('Inchange. -ForceCredentials pour le regenerer (ecrase le mot de passe enregistre).');
     }
     else {
+        if (confAlreadyExists) {
+            const stamp = new Date().toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 15);
+            const backupPath = `${confFile}.bak-${stamp}`;
+            fs.copyFileSync(confFile, backupPath);
+            console.log('');
+            console.warn(`ATTENTION : sockseek.conf existant remplace (-ForceCredentials). Ancienne version sauvegardee : ${backupPath}`);
+        }
+
         console.log('');
         console.log(paint('white', '   Identifiants Soulseek.'));
         console.log(paint('gray', "   Le compte n'a pas besoin d'exister : le serveur enregistre"));
-        console.log(paint('gray', '   le pseudo a la premiere connexion. Choisis-en un peu commun,'));
+        console.log(paint('gray', '   le pseudo a la premiere connexion. Prevoir un pseudo assez commun,'));
         console.log(paint('gray', '   sinon il sera deja pris et la connexion echouera.'));
         console.log('');
 
@@ -155,8 +186,8 @@ async function main() {
     }
 
     step('Verification');
-    const okSock = fs.existsSync(sockExe);
-    const okYt = fs.existsSync(ytExe);
+    const okSock = !!sockExe && fs.existsSync(sockExe);
+    const okYt = !!ytExe && fs.existsSync(ytExe);
     const okConf = skipCredentials || fs.existsSync(confFile);
 
     console.log(`   sockseek      : ${paint(okSock ? 'green' : 'red', okSock ? 'OK' : 'MANQUANT')}`);

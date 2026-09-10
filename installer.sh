@@ -42,6 +42,16 @@ fi
 # Meilleur effort : une panne ici (quota GitHub, pas de reseau) ne doit pas
 # empecher de demarrer l'interface web -- elle affiche le meme diagnostic
 # et permet de reessayer l'installation depuis l'onglet Configuration.
+#
+# -SkipCredentials par defaut : ce script ne doit jamais s'arreter pour
+# attendre une saisie dans CE terminal -- les identifiants Soulseek se
+# configurent dans l'interface web demarree juste apres (onglet
+# Configuration), pas ici. Sans effet si -ForceCredentials ou
+# -SkipCredentials figure deja dans les arguments.
+case " $* " in
+    *" -ForceCredentials "*|*" -SkipCredentials "*) ;;
+    *) set -- -SkipCredentials "$@" ;;
+esac
 node bin/install.js "$@"
 
 # --------------------------------------------------- interface web ---------

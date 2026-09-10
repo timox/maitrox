@@ -151,8 +151,15 @@ Options utiles (transmises telles quelles à `bin/install.js`) :
 
 ```sh
 ./installer.sh -InstallDir "/opt/sockseek" -MusicDir "/data/techno"
-./installer.sh -Force                  # réinstalle et régénère la config
+./installer.sh -Force                  # reinstalle sockseek/yt-dlp (sans toucher a sockseek.conf)
+./installer.sh -ForceCredentials       # regenere sockseek.conf (ecrase le mot de passe enregistre)
 ```
+
+`-Force` et `-ForceCredentials` sont volontairement deux options distinctes :
+la première ne touche jamais aux identifiants déjà enregistrés — sans elle,
+`sockseek.conf` existant est **toujours laissé intact**. `-ForceCredentials`
+prévient explicitement avant d'écraser, et sauvegarde l'ancien fichier
+(`sockseek.conf.bak-<horodatage>`) avant de le remplacer.
 
 ### À propos du compte Soulseek
 
