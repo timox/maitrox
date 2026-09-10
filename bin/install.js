@@ -15,7 +15,7 @@ const crypto = require('crypto');
 const { parseArgs } = require('../lib/argv');
 const { paint } = require('../lib/playlist');
 const { getSockseekConfigDir, getSockseekConfPath, setDefaultOutputDir } = require('../lib/paths');
-const { defaultInstallDir, defaultMusicDir, platformNames, installBinary } = require('../lib/install');
+const { defaultInstallDir, defaultMusicDir, platformNames, installBinary, testSoulseekConnection } = require('../lib/install');
 
 function step(msg) { console.log(paint('cyan', `\n>> ${msg}`)); }
 function ok(msg) { console.log(paint('green', `   ${msg}`)); }
@@ -122,7 +122,7 @@ async function main() {
 
     if (skipCredentials) {
         info('-SkipCredentials : ni prompt, ni ecriture de sockseek.conf.');
-        info("Configure les identifiants separement (POST /api/config/credentials, ou --username/--password).");
+        info("Identifiants a configurer separement (POST /api/config/credentials, ou --username/--password).");
     }
     // -Force ne concerne QUE les binaires (reinstallation sans risque) : il
     // ne doit jamais, par lui-meme, ecraser les identifiants Soulseek deja
@@ -199,27 +199,32 @@ async function main() {
         console.log(`   configuration : ${paint(okConf ? 'green' : 'red', okConf ? 'OK' : 'MANQUANT')}`);
     }
 
-    if (okSock && okYt && okConf) {
-        console.log(paint('white', [
-            '',
-            '================================================================',
-            ' Termine.',
-            '',
-            ' Teste la connexion Soulseek (cela creera le compte si besoin) :',
-            '',
-            '   sockseek "Sciahri - Let Them Go" --song --print results',
-            '',
-            ' Puis extrais une playlist :',
-            '',
-            '   node bin/extract.js -Url "https://soundcloud.com/..." -Download',
-            '',
-            '================================================================',
-        ].join('\n')));
-        return 0;
+    if (!(okSock && okYt && okConf)) {
+        console.warn('Installation incomplete, voir les lignes ci-dessus.');
+        return 1;
     }
 
-    console.warn('Installation incomplete, voir les lignes ci-dessus.');
-    return 1;
+    let testOk = true;
+    if (!skipCredentials) {
+        step('Test de connexion Soulseek');
+        const test = await testSoulseekConnection(sockExe);
+        testOk = test.ok;
+        console.log(`   ${paint(test.ok ? 'green' : 'red', test.message)}`);
+    }
+
+    console.log(paint('white', [
+        '',
+        '================================================================',
+        ' Termine.',
+        '',
+        ' Extraction d\'une playlist :',
+        '',
+        '   node bin/extract.js -Url "https://soundcloud.com/..." -Download',
+        '',
+        '================================================================',
+    ].join('\n')));
+
+    return testOk ? 0 : 1;
 }
 
 if (require.main === module) {

@@ -128,7 +128,7 @@ el('btn-stop-job').addEventListener('click', async () => {
 // ===================================================== Nouvelle playlist ==
 el('new-launch').addEventListener('click', () => {
   const url = el('new-url').value.trim();
-  if (!url) { alert("Colle d'abord une URL de playlist."); return; }
+  if (!url) { alert('URL de playlist requise.'); return; }
   const mode = document.querySelector('input[name=mode]:checked').value;
   const cookies = el('new-cookies').value || undefined;
   startJob('extract', { url, mode, cookiesFromBrowser: cookies }, 'extraction de la playlist');
@@ -203,7 +203,7 @@ el('btn-open-dest').addEventListener('click', async () => {
 
 el('btn-import').addEventListener('click', async () => {
   const p = el('import-path').value.trim();
-  if (!p) { alert("Choisis d'abord un dossier."); return; }
+  if (!p) { alert('Dossier requis.'); return; }
   const name = el('import-name').value.trim() || undefined;
   try {
     const r = await api('POST', '/api/config/import', { path: p, name });
@@ -277,7 +277,7 @@ function renderPlaylists() {
 
 function getSelectedRow() {
   const row = playlistRows.find((r) => r.Url === selectedUrl);
-  if (!row) alert('Selectionne une playlist dans la liste.');
+  if (!row) alert('Aucune playlist selectionnee dans la liste.');
   return row;
 }
 
