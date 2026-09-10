@@ -10,13 +10,34 @@ Tout tourne sur [Node.js](https://nodejs.org/) seul, sans aucune dépendance
 à installer (`npm install` n'est pas nécessaire) — même moteur que
 l'interface web, sur Windows comme sur Linux/macOS.
 
+## Un seul script : `installer.bat` / `installer.sh`
+
+**C'est le seul script à lancer, à chaque fois** — premier lancement comme
+tous les suivants. Double-clic sur `installer.bat` (Windows) ou
+`./installer.sh` (Linux/macOS) et il enchaîne, sans rien d'autre à taper :
+
+1. Met à jour le code du kit lui-même (`git pull`, si le dossier est un
+   clone git — sans effet sinon, ni sans réseau : il continue avec le code
+   déjà présent plutôt que de bloquer).
+2. Installe ou met à jour `sockseek` et `yt-dlp`, et la configuration
+   (`bin/install.js`) — en best-effort : une panne ici (quota GitHub, pas de
+   réseau) n'empêche pas la suite.
+3. Démarre l'interface web (`http://localhost:8342`, ouverte automatiquement
+   dans le navigateur) — c'est là que tout le reste se pilote.
+
+Un seul script, un seul réflexe en cas de doute : **relance
+`installer.bat`/`installer.sh`**. S'il te dit que le port est déjà utilisé,
+c'est qu'une instance tourne déjà quelque part (une fenêtre restée ouverte,
+un ancien processus) — ferme-la avant de relancer ; le message te le dit
+explicitement plutôt que de planter avec une pile d'erreurs illisible.
+
 | Fichier | Rôle |
 |---|---|
-| `installer.bat` / `installer.sh` | **Double-clic (ou `./installer.sh`) : installe tout** |
-| `webgui.bat` / `webgui.sh` | **Double-clic (ou `./webgui.sh`) : interface graphique**, dans le navigateur — voir plus bas |
+| `installer.bat` / `installer.sh` | **Le seul script à utiliser** : met à jour le code, installe/met à jour les binaires, démarre l'interface web |
 | `webgui/server.js` | Le serveur de l'interface graphique |
 | `webgui/public/` | Page web de l'interface (HTML/CSS/JS) |
-| `lancer.bat` / `lancer.sh` | Menu console (nouvelle playlist, reprise, état) — lance `bin/menu.js` |
+| `webgui.bat` / `webgui.sh` | Redémarre juste le serveur web, sans repasser par la mise à jour/l'installation — pratique une fois que tout est déjà en place |
+| `lancer.bat` / `lancer.sh` | Menu console (nouvelle playlist, reprise, état) — lance `bin/menu.js`, pour qui préfère le texte ou travaille par SSH |
 | `reprendre.bat` / `reprendre.sh` | Va direct au menu de reprise console, sans passer par celui de `lancer.bat` |
 | `bin/menu.js` | Le menu interactif console ; tout le cheminement (retours, sortie) y vit |
 | `bin/install.js` | Télécharge les binaires, crée la configuration, règle le PATH |
@@ -26,26 +47,14 @@ l'interface web, sur Windows comme sur Linux/macOS.
 | `lib/` | Fonctions partagées (nettoyage des titres, catalogue, index sockseek, installation) |
 | `powershell-legacy/` | Ancien kit PowerShell (archive, non maintenu) — voir son propre README |
 
-Si tu n'as pas envie de toucher à une ligne de commande, double-clic sur
-`installer.bat` (`./installer.sh` sous Linux/macOS) une fois, puis sur
-`webgui.bat` (`./webgui.sh`) pour tout le reste : ça démarre un petit
-serveur local et ouvre une page avec quatre onglets (Nouvelle playlist,
-Configuration, Playlists, Suivi d'exécution — détail plus bas) dans ton
-navigateur. `lancer.bat`/`lancer.sh` propose la même chose en mode texte
-dans une console, pour qui préfère ça ou travaille par SSH. Le reste de ce
-document décrit ce que ces outils font et comment piloter les scripts
-directement.
+### Interface graphique
 
-### Interface graphique (`webgui.bat` / `webgui.sh`)
-
-Double-clic sur `webgui.bat` sous Windows, ou `./webgui.sh` dans un
-terminal sous Linux/macOS : un petit serveur démarre sur
-`http://localhost:8342` et s'ouvre automatiquement dans le navigateur par
-défaut. Toute la logique (nettoyage des titres, catalogue, invocation de
-sockseek/yt-dlp) vit dans `lib/` — le serveur Node ne fait que la piloter et
-afficher le résultat dans une page web, ce qui la rend utilisable aussi
-bien sous Windows que sous Linux (contrairement à l'ancienne interface
-Windows Forms, qui ne pouvait exister que sous Windows).
+L'interface s'ouvre automatiquement dans le navigateur après
+`installer.bat`/`installer.sh`, sur `http://localhost:8342`. Toute la
+logique (nettoyage des titres, catalogue, invocation de sockseek/yt-dlp)
+vit dans `lib/` — le serveur Node ne fait que la piloter et afficher le
+résultat dans une page web, ce qui la rend utilisable aussi bien sous
+Windows que sous Linux.
 
 Quatre onglets :
 
@@ -114,32 +123,35 @@ sortante vers GitHub pour les récupérer.
 ## Installation
 
 Double-clique sur **`installer.bat`** (Windows) ou lance `./installer.sh`
-(Linux/macOS), ou en ligne de commande :
+(Linux/macOS) — voir « Un seul script » plus haut. En ligne de commande,
+les mêmes options passent directement à travers :
 
 ```sh
 cd <dossier-du-kit>
-node bin/install.js
+./installer.sh
 ```
 
-L'installateur enchaîne :
+Il enchaîne :
 
-1. Résout la dernière release de `fiso64/sockseek` pour la plateforme
+1. Met à jour le code du kit (`git pull`, best-effort).
+2. Résout la dernière release de `fiso64/sockseek` pour la plateforme
    courante (`win-x64`, `linux-x64` ou `osx-x64`), extrait le binaire vers
    `%LOCALAPPDATA%\sockseek` (Windows) ou `~/.local/share/sockseek`
    (Linux/macOS), et le rend exécutable (`chmod +x`) hors Windows.
-2. Fait de même pour `yt-dlp` (`yt-dlp.exe`, `yt-dlp_linux` ou `yt-dlp_macos`
+3. Fait de même pour `yt-dlp` (`yt-dlp.exe`, `yt-dlp_linux` ou `yt-dlp_macos`
    selon la plateforme).
-3. Ajoute le dossier d'installation au `PATH` de la session courante, et
+4. Ajoute le dossier d'installation au `PATH` de la session courante, et
    affiche la ligne à ajouter à ton profil de shell (Linux/macOS) ou à tes
    variables d'environnement (Windows) pour que ce soit permanent.
-4. Demande tes identifiants Soulseek et écrit `sockseek.conf` (dans
+5. Demande tes identifiants Soulseek et écrit `sockseek.conf` (dans
    `%APPDATA%\sockseek` sous Windows, `~/.config/sockseek` ailleurs).
+6. Démarre l'interface web.
 
-Options utiles :
+Options utiles (transmises telles quelles à `bin/install.js`) :
 
 ```sh
-node bin/install.js -InstallDir "/opt/sockseek" -MusicDir "/data/techno"
-node bin/install.js -Force                  # réinstalle et régénère la config
+./installer.sh -InstallDir "/opt/sockseek" -MusicDir "/data/techno"
+./installer.sh -Force                  # réinstalle et régénère la config
 ```
 
 ### À propos du compte Soulseek

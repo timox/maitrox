@@ -468,6 +468,16 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(404); res.end('Not found');
 });
 
+server.on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+        console.error(`Le port ${PORT} est deja utilise : un autre serveur (peut-etre une ancienne`);
+        console.error(`version restee ouverte) tourne deja. Ferme-le avant de relancer -- ou change`);
+        console.error(`de port avec la variable d'environnement SOCKSEEK_WEBGUI_PORT.`);
+        process.exit(1);
+    }
+    throw err;
+});
+
 server.listen(PORT, () => {
     console.log(`Kit sockseek -- interface web sur http://localhost:${PORT}`);
 });

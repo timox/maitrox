@@ -1,31 +1,64 @@
 @echo off
+REM Script unique : met a jour le code du kit, installe/met a jour les
+REM binaires (sockseek, yt-dlp) et la configuration, puis demarre
+REM l'interface web -- un seul script pour tout installer et deployer,
+REM du premier lancement aux suivants. Pas besoin d'autre script ni de
+REM commande git/node a taper a la main.
 chcp 65001 >nul
-setlocal
+setlocal EnableDelayedExpansion
 
 cd /d "%~dp0"
-
-echo ================================================================
-echo  Installation du kit sockseek
-echo ================================================================
-echo.
 
 where node >nul 2>nul
 if errorlevel 1 goto NoNode
 
-node "%~dp0bin\install.js" %*
-set CODE=%ERRORLEVEL%
-
-echo.
-if %CODE% neq 0 (
-    echo L'installation s'est terminee avec le code %CODE%.
-    echo Relis les messages ci-dessus.
-) else (
-    echo Installation terminee.
+REM ------------------------------------------------- mise a jour du code ---
+REM Sans effet si le dossier n'est pas un clone git ou sans reseau : avertit
+REM et continue plutot que de bloquer la suite pour autant.
+if exist "%~dp0.git" (
+    where git >nul 2>nul
+    if not errorlevel 1 (
+        echo ================================================================
+        echo  Mise a jour du kit
+        echo ================================================================
+        echo.
+        for /f "delims=" %%H in ('git rev-parse HEAD 2^>nul') do set "BEFORE=%%H"
+        git pull --ff-only
+        if errorlevel 1 (
+            echo.
+            echo Mise a jour du kit impossible ^(pas de reseau, ou modifications
+            echo locales en conflit^) : on continue avec le code deja present.
+        ) else (
+            for /f "delims=" %%H in ('git rev-parse HEAD 2^>nul') do set "AFTER=%%H"
+            if not "!BEFORE!"=="!AFTER!" (
+                echo.
+                echo Kit mis a jour.
+            ) else (
+                echo.
+                echo Deja a jour.
+            )
+        )
+        echo.
+    )
 )
 
+REM --------------------------------------------- binaires + configuration --
+REM Meilleur effort : une panne ici (quota GitHub, pas de reseau) ne doit
+REM pas empecher de demarrer l'interface web -- elle affiche le meme
+REM diagnostic et permet de reessayer l'installation depuis l'onglet
+REM Configuration.
+node "%~dp0bin\install.js" %*
+
+REM --------------------------------------------------- interface web -------
 echo.
-pause
-exit /b %CODE%
+echo ================================================================
+echo  Demarrage de l'interface web
+echo ================================================================
+echo.
+
+start "" cmd /c "timeout /t 2 >nul & start http://localhost:8342"
+node "%~dp0webgui\server.js"
+exit /b %ERRORLEVEL%
 
 
 :NoNode
