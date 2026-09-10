@@ -93,7 +93,7 @@ if (require.main === module) {
         process.exit(failed.length > 0 ? 10 : 0);
     }
     catch (e) {
-        console.error(paint('red', e.message));
+        console.error(`[ERREUR] ${e.message}`);
         process.exit(1);
     }
 }

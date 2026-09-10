@@ -408,6 +408,15 @@ td.path { color: var(--muted); }
   word-break: break-word;
 }
 
+.log-line { white-space: pre-wrap; }
+.log-error {
+  color: #fca5a5;
+  background: rgba(248, 113, 113, .12);
+  border-left: 2px solid #f87171;
+  margin: 2px -16px;
+  padding: 2px 14px;
+}
+
 .status-block {
   background: var(--surface-2);
   border: 1px solid var(--border);

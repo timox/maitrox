@@ -87,7 +87,9 @@ function startJob(scriptPath, args, description) {
     proc.on('error', (e) => {
         job.done = true;
         job.exitCode = -1;
-        job.lines.push(`[erreur] ${e.message}`);
+        const line = `[ERREUR] ${e.message}`;
+        job.lines.push(line);
+        broadcast('log', { line });
         broadcast('done', { code: -1, description, error: e.message });
     });
 
@@ -464,6 +466,16 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === 'GET') { serveStatic(req, res, url.pathname); return; }
     res.writeHead(404); res.end('Not found');
+});
+
+server.on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+        console.error(`Le port ${PORT} est deja utilise : un autre serveur (peut-etre une ancienne`);
+        console.error(`version restee ouverte) tourne deja. Ferme-le avant de relancer -- ou change`);
+        console.error(`de port avec la variable d'environnement SOCKSEEK_WEBGUI_PORT.`);
+        process.exit(1);
+    }
+    throw err;
 });
 
 server.listen(PORT, () => {
