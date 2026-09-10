@@ -81,7 +81,13 @@ async function main() {
     // --sleep-requests : SoundCloud limite a ~600 requetes / 10 min (1/s).
     // Sans ce throttle proactif, une playlist un peu longue declenche des
     // 429 en rafale, chacun retente 3 fois par defaut.
-    const ytArgs = ['--skip-download', '--ignore-errors', '--sleep-requests', '1', '-J'];
+    // --socket-timeout : sans lui, une connexion qui ne repond ni n'echoue
+    // franchement (reseau degrade, SoundCloud qui laisse trainer la
+    // requete) bloque indefiniment sur CETTE piste -- --ignore-errors ne
+    // protege que des echecs francs, pas des blocages. 30s : largement
+    // au-dessus d'une requete normale, suffisant pour couper court a un
+    // blocage reel sans faire echouer une connexion juste lente.
+    const ytArgs = ['--skip-download', '--ignore-errors', '--sleep-requests', '1', '--socket-timeout', '30', '-J'];
     if (cookiesFromBrowser) ytArgs.push('--cookies-from-browser', cookiesFromBrowser);
     ytArgs.push(url);
 
@@ -96,9 +102,24 @@ async function main() {
         console.log(paint('gray', `  ... toujours en cours (${elapsed}s, une requete par piste)`));
     }, 15000);
 
+    // Garde-fou de dernier recours au cas ou --socket-timeout ne suffirait
+    // pas a debloquer une piste recalcitrante (retries internes de yt-dlp
+    // qui s'enchainent sans jamais abandonner, par exemple) : mieux vaut
+    // un echec net et explicable au bout d'un moment raisonnable qu'un
+    // blocage silencieux indefini.
+    const METADATA_TIMEOUT_MS = 45 * 60 * 1000;
+
     let ytRes;
-    try { ytRes = await runCapture('yt-dlp', ytArgs); }
-    catch (e) { throw new Error(`yt-dlp introuvable ou en echec : ${e.message}`); }
+    try { ytRes = await runCapture('yt-dlp', ytArgs, { timeoutMs: METADATA_TIMEOUT_MS }); }
+    catch (e) {
+        if (e.timedOut) {
+            throw new Error(
+                `yt-dlp n'a pas termine la recuperation des metadonnees en ${METADATA_TIMEOUT_MS / 60000} minutes : ` +
+                'processus arrete. Cause probable : throttling SoundCloud ou connexion reseau degradee sur une ' +
+                'piste en particulier. Reessaie plus tard, ou avec une playlist plus courte pour isoler la piste en cause.');
+        }
+        throw new Error(`yt-dlp introuvable ou en echec : ${e.message}`);
+    }
     finally { clearInterval(heartbeat); }
     const raw = ytRes.stdout;
     if (!raw || !raw.trim()) {
