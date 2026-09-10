@@ -47,7 +47,19 @@ REM Meilleur effort : une panne ici (quota GitHub, pas de reseau) ne doit
 REM pas empecher de demarrer l'interface web -- elle affiche le meme
 REM diagnostic et permet de reessayer l'installation depuis l'onglet
 REM Configuration.
-node "%~dp0bin\install.js" %*
+REM
+REM -SkipCredentials par defaut : ce script ne doit jamais s'arreter pour
+REM attendre une saisie dans CETTE fenetre -- les identifiants Soulseek se
+REM configurent dans l'interface web demarree juste apres (onglet
+REM Configuration), pas ici. Sans effet si -ForceCredentials ou
+REM -SkipCredentials figure deja dans les arguments.
+set "INSTALL_ARGS=%*"
+echo !INSTALL_ARGS! | findstr /C:"-ForceCredentials" /C:"-SkipCredentials" >nul
+if errorlevel 1 (
+    node "%~dp0bin\install.js" -SkipCredentials %*
+) else (
+    node "%~dp0bin\install.js" %*
+)
 
 REM --------------------------------------------------- interface web -------
 echo.

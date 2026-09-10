@@ -80,7 +80,7 @@ async function main() {
 
             // =========================================== nouvelle playlist ====
             case 'AskUrl': {
-                console.log('\nColle l\'URL de la playlist SoundCloud ou YouTube.\n');
+                console.log('\nURL de la playlist SoundCloud ou YouTube :\n');
                 url = await readLine('URL : ');
                 if (!url || !url.trim()) {
                     console.log(paint('yellow', '\n  Aucune URL saisie, rien a faire.'));
@@ -95,7 +95,7 @@ async function main() {
 
             case 'AskMode': {
                 console.log(`\nURL : "${url}"\n`);
-                console.log('Que veux-tu faire ?\n');
+                console.log('Que faire ?\n');
                 console.log("  [1] Tester d'abord : cherche sur Soulseek, ne telecharge rien");
                 console.log('  [2] Telecharger pour de vrai');
                 console.log("  [3] Extraire et nettoyer la liste seulement, sans toucher a Soulseek");
@@ -118,7 +118,7 @@ async function main() {
                 if (choix !== '3') {
                     const currentDest = getDefaultOutputDir();
                     console.log(`\nDossier de destination actuel : "${currentDest}"`);
-                    console.log('Laisse vide pour le conserver, ou tape un nouveau chemin pour le');
+                    console.log('Laisser vide pour le conserver, ou taper un nouveau chemin pour le');
                     console.log('remplacer (il devient le defaut pour les prochaines fois) :');
                     const dest = await readLine('Dossier : ');
                     if (dest && dest.trim()) destArgs = ['-OutputDir', dest.trim()];
@@ -138,11 +138,11 @@ async function main() {
                     console.log('(a l\'interieur du dossier de destination).');
                     console.log('');
                     console.log("Sur un reseau P2P, reessayer plus tard suffit souvent : le pair");
-                    console.log('qui partage le morceau doit simplement etre connecte. Choisis');
+                    console.log("qui partage le morceau doit simplement etre connecte -- selectionner");
                     console.log('"Reprendre les titres manquants" dans le menu principal.');
                 }
                 else {
-                    console.log(paint('red', `Termine avec le code ${code}. Relis les messages ci-dessus.`));
+                    console.log(paint('red', `Termine avec le code ${code}. Voir les messages ci-dessus.`));
                 }
                 state = 'PostAction';
                 break;
@@ -161,7 +161,7 @@ async function main() {
 
                 invokeKitScript(resumeScript, ['-List']);
 
-                console.log('\nQue veux-tu reprendre ?\n');
+                console.log('\nQue reprendre ?\n');
                 console.log('  [1] Voir d\'abord la liste des titres qui seraient repris (test, rien de relance)');
                 console.log('  [2] Tous les morceaux manquants, toutes playlists confondues');
                 console.log('  [3] Une playlist en particulier');
@@ -182,7 +182,7 @@ async function main() {
                 console.log('\n----------------------------------------------------------------\n');
                 invokeKitScript(resumeScript, ['-DryRun']);
 
-                console.log('\nQue veux-tu faire maintenant ?\n');
+                console.log('\nEt maintenant ?\n');
                 console.log('  [1] Reprendre tous ces titres pour de vrai');
                 console.log('  [2] Reprendre une playlist en particulier plutot');
                 console.log('  [3] Retour au menu de reprise');
@@ -231,7 +231,7 @@ async function main() {
                 console.log('\n----------------------------------------------------------------\n');
                 invokeKitScript(resumeScript, ['-Only', plname.trim(), '-DryRun']);
 
-                console.log('\nQue veux-tu faire maintenant ?\n');
+                console.log('\nEt maintenant ?\n');
                 console.log('  [1] Reprendre cette playlist pour de vrai');
                 console.log('  [2] Retour au menu de reprise');
                 console.log('  [3] Retour au menu principal');

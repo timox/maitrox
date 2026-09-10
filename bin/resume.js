@@ -241,8 +241,8 @@ async function main() {
     }
     else {
         console.log(paint('yellow', 'Aucun titre supplementaire cette fois.'));
-        console.log(paint('gray', "Sur du P2P c'est normal : reessaie dans quelques jours, a une"));
-        console.log(paint('gray', 'heure ou davantage de pairs sont connectes.'));
+        console.log(paint('gray', "Sur du P2P c'est normal : relancer dans quelques jours, a une"));
+        console.log(paint('gray', 'heure ou davantage de pairs sont connectes, rattrape souvent le reste.'));
     }
 
     return 0;
