@@ -301,7 +301,7 @@ async function main() {
             'Aucun fichier sockseek.conf trouve, et aucun identifiant fourni.',
             'Sockseek exige --user et --pass, ou de les lire dans sa configuration.',
             '',
-            'Cree le fichier suivant :',
+            'Creer le fichier suivant :',
             '',
             `  ${confAdvised}`,
             '',
