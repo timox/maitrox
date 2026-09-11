@@ -18,8 +18,10 @@ const { parseArgs } = require('../lib/argv');
 const { convertEntry } = require('../lib/text');
 const { writeCsv } = require('../lib/csv');
 const { safeFolderName, getDefaultOutputDir, setDefaultOutputDir, getSockseekConfPath, getSockseekConfigDir } = require('../lib/paths');
+const { registerPlaylist } = require('../lib/catalogue');
 const { findOnPath, findBinary } = require('../lib/findBinary');
 const { paint } = require('../lib/playlist');
+const log = require('../lib/log');
 
 const KNOWN_BROWSERS = ['brave', 'chrome', 'chromium', 'edge', 'firefox', 'opera', 'safari', 'vivaldi', 'whale'];
 
@@ -87,17 +89,37 @@ async function main() {
     // protege que des echecs francs, pas des blocages. 30s : largement
     // au-dessus d'une requete normale, suffisant pour couper court a un
     // blocage reel sans faire echouer une connexion juste lente.
-    const ytArgs = ['--skip-download', '--ignore-errors', '--sleep-requests', '1', '--socket-timeout', '30', '-J'];
+    // --verbose : -J impose --quiet (verifie en conditions reelles : sans
+    // --verbose, stderr reste completement vide durant toute l'extraction,
+    // meme sur une playlist de 78 pistes) -- necessaire pour recuperer la
+    // vraie progression ("Downloading item N of M"), filtree ci-dessous
+    // pour n'en garder que l'essentiel (le reste -- formats, sleeps,
+    // debug -- est nettement trop verbeux pour le journal).
+    const ytArgs = ['--skip-download', '--ignore-errors', '--sleep-requests', '1', '--socket-timeout', '30', '--verbose', '-J'];
     if (cookiesFromBrowser) ytArgs.push('--cookies-from-browser', cookiesFromBrowser);
     ytArgs.push(url);
 
     // yt-dlp -J n'affiche son resultat qu'une fois TOUTES les pistes
     // recuperees (une requete HTTP chacune, espacee de --sleep-requests) :
-    // rien d'autre ne peut s'afficher entre-temps. Sans ce battement,
-    // une playlist un peu longue laisse le journal silencieux plusieurs
-    // dizaines de secondes -- indiscernable d'un blocage reel.
+    // sans la ligne "Downloading item N of M" qu'il imprime lui-meme en
+    // mode verbeux (filtree ici depuis le flot de debug), rien d'autre ne
+    // permet de savoir ou en est l'extraction -- indiscernable d'un
+    // blocage reel.
     const startedAt = Date.now();
+    let lastTrackAt = startedAt;
+    const onStderrLine = (line) => {
+        const m = line.match(/^\[download\] Downloading item (\d+) of (\d+)/);
+        if (m) {
+            lastTrackAt = Date.now();
+            console.log(paint('gray', `  piste ${m[1]}/${m[2]}...`));
+        }
+    };
+    // Filet de secours : si le flux verbeux ne produit aucune ligne
+    // reconnue pendant 20s (format de sortie change entre versions de
+    // yt-dlp, par exemple), retombe sur un battement simple plutot que de
+    // rester muet.
     const heartbeat = setInterval(() => {
+        if (Date.now() - lastTrackAt < 20000) return;
         const elapsed = Math.round((Date.now() - startedAt) / 1000);
         console.log(paint('gray', `  ... toujours en cours (${elapsed}s, une requete par piste)`));
     }, 15000);
@@ -110,7 +132,7 @@ async function main() {
     const METADATA_TIMEOUT_MS = 45 * 60 * 1000;
 
     let ytRes;
-    try { ytRes = await runCapture('yt-dlp', ytArgs, { timeoutMs: METADATA_TIMEOUT_MS }); }
+    try { ytRes = await runCapture('yt-dlp', ytArgs, { timeoutMs: METADATA_TIMEOUT_MS, onStderrLine }); }
     catch (e) {
         if (e.timedOut) {
             throw new Error(
@@ -131,10 +153,14 @@ async function main() {
     if (entries.length === 0) throw new Error('Aucune piste trouvee dans la playlist.');
 
     // Chaque playlist telecharge dans son propre sous-dossier, nomme
-    // d'apres son titre, a l'interieur du dossier de destination.
+    // d'apres son titre, a l'interieur du dossier de destination -- meme
+    // en mode extraction seule, pour que le CSV et le catalogue vivent au
+    // meme endroit qu'un run complet plutot que dans le dossier du kit.
     const playlistName = data.title || url.replace(/\/+$/, '').split('/').pop();
     const playlistFolder = safeFolderName(playlistName);
     const destDir = path.join(outputDir, playlistFolder);
+    fs.mkdirSync(destDir, { recursive: true });
+    if (!args.Out) out = path.join(destDir, out);
 
     console.log(paint('cyan', `${entries.length} pistes recuperees.`));
 
@@ -168,6 +194,23 @@ async function main() {
     // Le BOM gene certains parseurs CSV : ecrit en UTF-8 sans BOM (comportement par defaut ici).
     fs.writeFileSync(out, writeCsv(rows, ['Artist', 'Title', 'Length', 'SourceChannel', 'Url', 'Review']), 'utf8');
 
+    // Enregistree au catalogue des maintenant, par defaut, sans attendre
+    // -Download ni la fin d'une recherche Soulseek (registerPlaylist met a
+    // jour l'entree existante plutot que d'en creer une seconde, cle :
+    // l'URL) : sans ca, interrompre le telechargement en cours de route
+    // (webgui, Ctrl+C) ne laisse AUCUNE trace exploitable dans l'onglet
+    // Playlists pour reprendre, meme si sockseek avait deja recupere des
+    // pistes sur le disque avant l'interruption -- ne jamais l'enregistrer
+    // serait absurde. Le rapport/playlist complets, eux, viennent plus bas
+    // (buildPlaylist), une fois qu'il y a un resultat reel a montrer.
+    registerPlaylist({ url, outputDir: destDir, sourceCsv: out, total: rows.length });
+
+    // En-tete explicite : sans lui, ce tableau se lit comme un dump brut
+    // indistinguable du reste du journal -- pas un probleme de longueur,
+    // un probleme de reperes (colonnes non identifiees).
+    console.log('');
+    console.log(paint('white', `${'Artiste'.padEnd(30)} ${'Titre'.padEnd(40)} ${'Duree(s)'.padEnd(6)} Remarque`));
+    console.log(paint('gray', '-'.repeat(90)));
     for (const r of rows) {
         console.log(`${(r.Artist || '').padEnd(30)} ${(r.Title || '').padEnd(40)} ${String(r.Length).padEnd(6)} ${r.Review || ''}`);
     }
@@ -193,13 +236,17 @@ async function main() {
 
     // ---------------------------------------------------------- telechargement --
     if (!download) {
+        // Rapport + playlist M3U complets (deja enregistree au catalogue
+        // plus haut) : sans index sockseek, chaque titre y apparait comme
+        // "Jamais traite".
+        const { buildPlaylist } = require('./build-playlist');
+        buildPlaylist({ outputDir: destDir, sourceCsv: out, register: url });
+
         console.log('');
         console.log(paint('cyan', 'Pour verifier ce que sockseek trouverait :'));
         console.log(`  node bin/extract.js -Url "${url}" -Download -PrintOnly`);
         return 0;
     }
-
-    fs.mkdirSync(destDir, { recursive: true });
 
     // --------------------------------------- telechargement direct (SoundCloud) --
     let directRows = rows.filter((r) => directDownloadUrls.has(r.Url));
@@ -227,7 +274,7 @@ async function main() {
                 console.log(paint('green', `  OK : ${row.Artist} - ${row.Title}`));
             }
             else {
-                console.warn(`  Echec du telechargement direct, recherche Soulseek en repli : ${row.Artist} - ${row.Title}`);
+                log.warn(`Echec du telechargement direct, recherche Soulseek en repli : ${row.Artist} - ${row.Title}`);
                 searchRows.push(row);
             }
         }
@@ -268,7 +315,7 @@ async function main() {
 
     if (!exe) {
         console.log('');
-        console.warn([
+        log.warnBlock([
             'Executable sockseek introuvable (ni dans le PATH, ni dans le dossier',
             "d'installation par defaut du kit).",
             '',
@@ -278,7 +325,7 @@ async function main() {
             '     -SockseekPath "/chemin/vers/sockseek"',
             '',
             "  2. Lancer installer.sh (ou installer.bat) pour l'installer.",
-        ].join('\n'));
+        ]);
         console.log(paint('green', `Le CSV ${out} est ecrit : relancer avec -SockseekPath une fois installe.`));
         return 2;
     }
@@ -297,7 +344,7 @@ async function main() {
 
     if (!conf) {
         console.log('');
-        console.warn([
+        log.warnBlock([
             'Aucun fichier sockseek.conf trouve, et aucun identifiant fourni.',
             'Sockseek exige --user et --pass, ou de les lire dans sa configuration.',
             '',
@@ -314,7 +361,7 @@ async function main() {
             'Utiliser un compte Soulseek DEDIE en cas d\'autre client (Nicotine+,',
             'slskd) deja connecte en parallele : deux sessions sur le meme compte',
             'provoquent des problemes de connexion.',
-        ].join('\n'));
+        ]);
         console.log(paint('green', `Le CSV ${out} est ecrit : relancer une fois la configuration en place.`));
         return 3;
     }
@@ -335,6 +382,14 @@ async function main() {
         '--remove-ft',
         '--name-format', '{artist( - )title|filename}',
         '--output-dir', destDir,
+        // Sans ca, sockseek imprime des barres de progression mises a jour
+        // via \r sans \n : notre pipeline de log (webgui/server.js) ne
+        // coupe les lignes que sur \r?\n, donc ces mises a jour en place
+        // s'accumulent en une seule "ligne" geante truffee de sequences
+        // ANSI au lieu d'un flux lisible. Verifie en conditions reelles :
+        // --no-progress produit des lignes simples, completes, une par
+        // evenement (recherche, resultat trouve, etc.).
+        '--no-progress',
     ];
 
     if (printOnly) {
@@ -364,19 +419,19 @@ async function main() {
         // l'utilisateur deviner depuis un simple code de sortie.
         const logContent = fs.existsSync(logPath) ? fs.readFileSync(logPath, 'utf8') : null;
         if (logContent && /INVALIDPASS/.test(logContent)) {
-            console.warn([
+            log.warnBlock([
                 'Identifiants Soulseek refuses (INVALIDPASS).',
                 'Cause la plus frequente : ce pseudo est deja pris par quelqu\'un d\'autre --',
                 'Soulseek ne cree un compte que si le pseudo est libre, sinon le mot de',
                 'passe ne correspondra jamais au sien. Choisir un pseudo moins courant.',
                 'Sinon, verifier le mot de passe dans sockseek.conf.',
-            ].join('\n'));
+            ]);
         }
         else if (logContent && /login failed/i.test(logContent)) {
-            console.warn(`Connexion a Soulseek echouee. Voir le journal pour le detail : ${logPath}`);
+            log.warn(`Connexion a Soulseek echouee. Voir le journal pour le detail : ${logPath}`);
         }
         else {
-            console.warn(`sockseek s'est termine avec le code ${code}. Journal : ${logPath}`);
+            log.warn(`sockseek s'est termine avec le code ${code}. Journal : ${logPath}`);
         }
     }
 
@@ -390,7 +445,7 @@ async function main() {
 
 if (require.main === module) {
     main().then((code) => process.exit(code || 0)).catch((e) => {
-        console.error(`[ERREUR] ${e.message}`);
+        log.error(e.message);
         process.exit(1);
     });
 }

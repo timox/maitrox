@@ -18,6 +18,7 @@ const { getRunResults } = require('../lib/runResults');
 const { writeM3UPlaylist, paint } = require('../lib/playlist');
 const { writeCsv } = require('../lib/csv');
 const { findOnPath } = require('../lib/findBinary');
+const log = require('../lib/log');
 
 function findExtra(here) {
     const names = ['sockseek.exe', 'sldl.exe', 'sockseek', 'sldl'];
@@ -66,7 +67,7 @@ async function main() {
     if (only) {
         entries = entries.filter((e) => (e.Url || '').includes(only) || (e.Name || '').includes(only));
         if (entries.length === 0) {
-            console.warn(`Aucune playlist ne correspond a '${only}'.`);
+            log.warn(`Aucune playlist ne correspond a '${only}'.`);
             return 1;
         }
     }
@@ -74,7 +75,7 @@ async function main() {
     // ------------------------------------------------------------------ oubli ---
     if (forget) {
         if (!only) {
-            console.warn("-Forget exige -Only, pour ne pas vider le catalogue par accident.");
+            log.warn("-Forget exige -Only, pour ne pas vider le catalogue par accident.");
             return 1;
         }
         const all = readCatalogue();
@@ -183,11 +184,15 @@ async function main() {
             '--remove-ft',
             '--name-format', '{artist( - )title|filename}',
             '--output-dir', dir,
+            // Voir bin/extract.js : sans ca, les barres de progression
+            // (mises a jour via \r sans \n) ne sont pas correctement
+            // decoupees en lignes par notre pipeline de log.
+            '--no-progress',
         ];
 
         const run = await runInherit(exe, sockArgs);
         if (run.status !== 0) {
-            console.warn(`sockseek a rendu le code ${run.status}. Journal : ${logPath}`);
+            log.warn(`sockseek a rendu le code ${run.status}. Journal : ${logPath}`);
         }
 
         try { fs.unlinkSync(retryCsv); } catch (e) { /* deja absent */ }
@@ -250,7 +255,7 @@ async function main() {
 
 if (require.main === module) {
     main().then((code) => process.exit(code || 0)).catch((e) => {
-        console.error(`[ERREUR] ${e.message}`);
+        log.error(e.message);
         process.exit(1);
     });
 }

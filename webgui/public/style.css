@@ -416,6 +416,13 @@ td.path { color: var(--muted); }
   margin: 2px -16px;
   padding: 2px 14px;
 }
+.log-warn {
+  color: #fcd34d;
+  background: rgba(251, 191, 36, .10);
+  border-left: 2px solid #fbbf24;
+  margin: 2px -16px;
+  padding: 2px 14px;
+}
 
 .status-block {
   background: var(--surface-2);

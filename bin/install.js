@@ -14,6 +14,7 @@ const readline = require('readline');
 const crypto = require('crypto');
 const { parseArgs } = require('../lib/argv');
 const { paint } = require('../lib/playlist');
+const log = require('../lib/log');
 const { getSockseekConfigDir, getSockseekConfPath, setDefaultOutputDir } = require('../lib/paths');
 const { defaultInstallDir, defaultMusicDir, platformNames, installBinary, testSoulseekConnection } = require('../lib/install');
 
@@ -89,7 +90,7 @@ async function main() {
             installDir, force, explicitUrl: sockseekUrl, log: info,
         });
     }
-    catch (e) { console.error(`[ERREUR] ${e.message}`); }
+    catch (e) { log.error(e.message); }
 
     step('yt-dlp');
     let ytExe = null;
@@ -99,7 +100,7 @@ async function main() {
             installDir, force, explicitUrl: ytDlpUrl, archive: false, log: info,
         });
     }
-    catch (e) { console.error(`[ERREUR] ${e.message}`); }
+    catch (e) { log.error(e.message); }
 
     step('PATH');
     const sep = path.delimiter;
@@ -139,7 +140,7 @@ async function main() {
             const backupPath = `${confFile}.bak-${stamp}`;
             fs.copyFileSync(confFile, backupPath);
             console.log('');
-            console.warn(`ATTENTION : sockseek.conf existant remplace (-ForceCredentials). Ancienne version sauvegardee : ${backupPath}`);
+            log.warn(`sockseek.conf existant remplace (-ForceCredentials). Ancienne version sauvegardee : ${backupPath}`);
         }
 
         console.log('');
@@ -200,7 +201,7 @@ async function main() {
     }
 
     if (!(okSock && okYt && okConf)) {
-        console.warn('Installation incomplete, voir les lignes ci-dessus.');
+        log.warn('Installation incomplete, voir les lignes ci-dessus.');
         return 1;
     }
 
@@ -229,7 +230,7 @@ async function main() {
 
 if (require.main === module) {
     main().then((code) => process.exit(code || 0)).catch((e) => {
-        console.error(`[ERREUR] ${e.message}`);
+        log.error(e.message);
         process.exit(1);
     });
 }

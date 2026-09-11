@@ -51,19 +51,21 @@ function setGlobalStatus(state, text) {
   el('global-status-text').textContent = text;
 }
 
-// Les scripts de bin/ prefixent leurs erreurs de "[ERREUR] " (voir
-// bin/extract.js, bin/resume.js, etc.) : detecte ce marqueur pour mettre
-// la ligne en evidence dans le journal, et pour remonter le vrai message
-// -- pas seulement un code de sortie -- dans le statut et la pastille.
+// Les scripts de bin/ (via lib/log.js) prefixent leurs lignes de
+// "[ERREUR] " ou "[AVERT] " : detecte ces marqueurs pour mettre la ligne
+// en evidence dans le journal, et pour remonter le vrai message -- pas
+// seulement un code de sortie -- dans le statut et la pastille.
 const ERROR_PREFIX = /^\[erreur\]\s?/i;
+const WARN_PREFIX = /^\[avert\]\s?/i;
 let lastErrorText = '';
 
 function appendLog(line) {
   const box = el('log');
   const isError = ERROR_PREFIX.test(line);
+  const isWarn = !isError && WARN_PREFIX.test(line);
   if (isError) lastErrorText = line.replace(ERROR_PREFIX, '');
   const row = document.createElement('div');
-  row.className = isError ? 'log-line log-error' : 'log-line';
+  row.className = 'log-line' + (isError ? ' log-error' : isWarn ? ' log-warn' : '');
   row.textContent = line;
   box.appendChild(row);
   box.scrollTop = box.scrollHeight;
