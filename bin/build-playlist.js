@@ -13,6 +13,7 @@ const { getRunResults } = require('../lib/runResults');
 const { writeM3UPlaylist, showRunSummary, paint } = require('../lib/playlist');
 const { registerPlaylist } = require('../lib/catalogue');
 const { writeCsv } = require('../lib/csv');
+const log = require('../lib/log');
 
 function findIndexRecursive(dir) {
     let best = null;
@@ -49,8 +50,7 @@ function buildPlaylist(opts) {
         console.log(paint('gray', `Index : ${indexPath}`));
     }
     else {
-        console.warn('Aucun index sockseek trouve. La playlist sera construite en');
-        console.warn('balayant les fichiers audio du dossier, sans detail des echecs.');
+        log.warn('Aucun index sockseek trouve : playlist construite en balayant les fichiers audio du dossier, sans detail des echecs.');
     }
 
     const results = getRunResults({ indexPath, outputDir, sourceCsv });
@@ -93,7 +93,7 @@ if (require.main === module) {
         process.exit(failed.length > 0 ? 10 : 0);
     }
     catch (e) {
-        console.error(`[ERREUR] ${e.message}`);
+        log.error(e.message);
         process.exit(1);
     }
 }
